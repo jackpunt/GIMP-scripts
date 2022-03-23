@@ -1,0 +1,18 @@
+{
+  "name": "@thegraid/gimp-scripts",
+  "version": "1.0.0",
+  "description": "script-fu code to make cards from templates and other goodies",
+  "main": "lib/require.scm",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "gimp",
+    "script-fu"
+  ],
+  "author": "Jeff Peck <jpeckj@gmail.com> (http://thegraid.com/)",
+  "license": "ISC"
+}

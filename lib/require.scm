@@ -1,0 +1,11 @@
+(define-macro (require filepath . symbols)
+  (message-string "require:" symbols)
+  (let* ((path (eval filepath))
+	 (lpath (util-load-path path)))
+    `(if (let ((need-to-load #f))
+	    (define (sym-defined? symbol) (if (catch #t (begin (eval symbol) #f)) (set! need-to-load #t)))
+	    (for-each sym-defined? (quote ,symbols))
+	    need-to-load)
+	 (load ,lpath))))
+
+(gimp-message "require.scm loaded")
