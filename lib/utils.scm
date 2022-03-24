@@ -1,4 +1,5 @@
 ;;; GIMP scheme code
+(define BASE-PATH "/Users/jpeck/Google Drive/jpeckj/")
 
 (macro (exports form)
   (let* ((syms (cdr form)))
@@ -10,13 +11,13 @@
     `(begin ,@defs))))
 
 (define (util-load-path0 project name)
-  (let* ((base "/Users/jpeck/Google Drive/jpeckj/")
-	 (gimp "GIMP/2.0")
-	 (proj (if (equal? project "") gimp project)))
+  (let* ((base BASE-PATH)
+     (gimp "GIMP/2.0")
+     (proj (if (equal? project "") gimp project)))
     (string-append base proj "/scripts/" name ".scm")))
 
 (define (util-load-path name)
-  (let* ((root "/Users/jpeck/Google Drive/jpeckj/")
+  (let* ((root BASE-PATH)
 	 (base "GIMP-scripts/"))
     (string-append root base name ".scm")))
 

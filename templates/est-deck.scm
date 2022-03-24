@@ -3,7 +3,6 @@
 (require "templates/script-fu-card-template" ENTRY-POINTS) ; load in the proper order...
 
 ;; Angular-11 (> 8) ng serve does not build assets across symlink. (Jan 2021)
-;;(set! CARD-DIR "/Users/jpeck/Data/Programs/ng/citymap/src/assets/main/images/cards/")
 ;; NOW: "citymap" project directs finished cards to .../ng/citymap/src/assets/main/images/cards/  (citymap/cards -> .../ng/.../cards)
 
 (macro (ifgimp let-rest)
@@ -2801,7 +2800,7 @@
 		))))
   
 
-;;; GUI invokable from GIMP: sf-make-info OR sf-make-deck (depending on do-gimp)
+;;; GUI-invokable from GIMP: sf-make-info OR sf-make-deck (depending on do-gimp)
 ;;; independent of DO-TEMPLATE
 (define (make-a-deck deck-str do-gimp)
   (try-load-aux-proj AUX-PROJ-NAME)

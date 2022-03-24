@@ -2,5 +2,16 @@
   "files.exclude": {
     "**/*~": true
   },
-  "files.insertFinalNewline": true
+  "files.insertFinalNewline": true,
+  "editor.detectIndentation": false,
+  "editor.tabSize": 8,
+  "editor.tokenColorCustomizations": {
+    "comments": "#9c2601d7",
+    "numbers": "#2f21ff",
+    "keywords": "#c001a7",
+    "functions": "#3462fc",
+    "strings": "#8401b8",
+    "types": "#00f7ff",
+    "variables": "#015705", // function arguments
+  }
 }
