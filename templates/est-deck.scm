@@ -22,27 +22,46 @@
 
 ;; CARD-SAVE-PNG? [so can DO-GIMP, but not save file? for testing?]
 
-(define DO-GIMP #t)		   ; #t: do GIMP image generation, #f: Just write cardinfo files (set by sf-make-deck/info)
+(define DO-GIMP #t) ; #t: do GIMP image generation, #f: Just write cardinfo files (set by sf-make-deck/info)
+(define CARD-SCALE .5)		     ; scale when write PNG [template always uses full-scale image]
 
-;; use card-size for MY-MINI-18-SPEC
-(template-use "citymap" MY-MINI-18-SPEC)
-(define CARD-SCALE .5)		     ; multiply cardsize: 1, .25, (/ 1 3) or whatever
+;;; Card-images are always (750x525) 
+
+(template-use "citymap" MY-MINI-18-SPEC)  ; use card-size for MY-MINI-18-SPEC (trimmed: no bleed)
 (define DO-INFO #t)		     ; #t: write info to typescript class file
 (define DO-TEMPLATE #f)		     ; #t: card-put-image on template-image VS card-write-info
 (define CARD-DISPLAY? #t)	     ; #t: card-put-image also force DISPLAY for each card-image
 (define CARD-SAVE-PNG #t)	     ; #t: if DO-GIMP write .PNG; #f: TEST/TEMPLATE: no CARD.PNG
+(define CARD-SIZE TEMPLATE-CARD-SIZE)	; nominal: (750 525) no bleed
 
-;;(template-use "Estates" PPG-MINI-36-SPEC) (define CARD-SCALE 1) ; multiply cardsize: 1, .25, (/ 1 3) or whatever
-;;(define DO-INFO #f)		   ; #t: write info to typescript class file
-;;(define DO-TEMPLATE #t)          ; #t: card-put-image on template-image VS card-write-info
-;;(define CARD-DISPLAY? #f)	   ; #t: card-put-image also force DISPLAY for each card-image
-;;(define CARD-SAVE-PNG #f)        ; #t: when DO-GIMP also write .PNG to file; #f: TEST or TEMPLATE but no CARD.PNG
+(define (no-bleed-template bleed template)
+  (let* ((file (car template))
+	 (size (cadr template))
+	 (offset (cddr template))
+	 (w (nth 0 size))
+	 (h (nth 1 size))
+	 (x (nth 0 offset))
+	 (y (nth 1 offset))
+	 (sizeb (list (- w bleed bleed) (- h bleed bleed)))
+	 (offsb `(,(+ bleed x) ,(+ bleed y) ,@(cddr offset)))
+	 )
+    `(,file ,sizeb ,@offsb)))
+
+(define PPG-MINI-36-BLEED (no-bleed-template 25 PPG-MINI-36-SPEC))
+(template-use "Estates" PPG-MINI-36-BLEED) ; (750 525) with room to bleed
+
+;;(template-use "Estates" PPG-MINI-36-SPEC) ; (800 575) includes bleed space
+(define DO-INFO #f)		     ; #t: write info to typescript class file
+(define DO-TEMPLATE #t)		     ; #t: card-put-image on template-image VS card-write-info
+(define CARD-DISPLAY? #f)	     ; #t: card-put-image also force DISPLAY for each card-image
+(define CARD-SAVE-PNG #f)	     ; #t: if DO-GIMP write .PNG; #f: TEST/TEMPLATE: no CARD.PNG
+(define CARD-SIZE TEMPLATE-CARD-SIZE)
 
 (define CARD-LOOP #t)		   ; #f to stop generation loops [tends to kill script-fu/GIMP]
 (define CIRCLE-IMAGE-SIZE 250)     ; [for Debt & House Tokens]
 
 
-;; GIMP uses these for color?
+;; GIMP uses these (R G B) for color:
 (define BLACK  '(0    0   0))
 (define GREY   '(128 128 128))
 (define WHITE  '(255 255 255))
@@ -106,24 +125,31 @@
   (card-select-rr image)
   (gimp-image-select-rectangle image CHANNEL-OP-INTERSECT x y w h))
   
+(define card-force-display #f)
 (define (card-make-base-image w h . args)
   ;; new card, WHITE Background layer
   (let* ((radius (util-opt-arg args CARD-RADIUS))
 	 (image (car (gimp-image-new w h RGB)))
-	 (layer (car (gimp-layer-new image w h RGBA-IMAGE "Background" 100 LAYER-MODE-NORMAL))))
+	 (layer (car (gimp-layer-new image w h RGBA-IMAGE "base-layer" 100 LAYER-MODE-NORMAL))))
     (gimp-drawable-fill layer FILL-WHITE)
     (gimp-image-insert-layer image layer 0 0) ; parent 0 position 0
     (card-select-rr image radius)
     (gimp-selection-invert image)
     (gimp-drawable-edit-fill layer FILL-TRANSPARENT)
-    ;;(message-string1 "card-make-base-image" (list image layer))
-
-    ;; DISPLAY IT
-    ;;(message-string1 "display=" (card-put-image image 0 #t #f) "image=" image)
+    ;; CAN FORCE DISPLAY
+    (when card-force-display
+	  (display (card-put-image image 0 #t #f))
+	  (let ((display (para-get-display image)))
+	    (message-string "card-make-base-image:" `(image ,image layer ,layer display ,display))))
     ;; WHILE TESTING
-
     (list image layer)
     ))
+
+(define (card-base-layer image)
+  (let* ((layers (gimp-image-get-layers image))
+	 (nlayer (car layers))
+	 (layerv (cadr layers)))
+    (vector-ref layerv (- nlayer 1))))
 
 (define (eval-sym val)
   ;; unquotify symbol if necessary
@@ -149,10 +175,10 @@
     layer))
 
 (define (template-width portrait?)
-  (apply (if portrait? min max) TEMPLATE-CARD-SIZE))
+  (apply (if portrait? min max) CARD-SIZE))
 
 (define (template-height portrait?)
-  (apply (if portrait? max min) TEMPLATE-CARD-SIZE))
+  (apply (if portrait? max min) CARD-SIZE))
   
 (define (card-make-base portrait? color ty by)
   ;; portrait #t or #f (for landscape)
@@ -168,33 +194,39 @@
     image-layer
     ))
 
+(define msg-make-coin #f)
 (define (card-make-coin image value cx cy size . args)
   ;; put a "coin" icon with value on card [radius of size pixels]
   ;; cx,cy can use 'center or 'left, etc.
   ;; .oval for Big Center Coin
   ;; layer, select-circle, fill-gold, set-value, merge-down, crop-to-content, set-offsets
-  ;;(message-string1 "card-make-coin" image value cx cy size args)
+  (and msg-make-coin (message-string1 "card-make-coin" image value cx cy size args))
   (let* ((oval (util-assq 'oval args 1))
 	 (r180? (util-assq 'r180 args)) ; #t or #f
-	 (c (/ size 2))
+	 (font (util-assq 'font args CARD-COIN-FONT))
+	 (gold (util-assq 'gold args GOLD))
+	 (alpha (util-assq 'alpha args 100))			  ; 0--100% opaque
 	 (valu (if (number? value) (number->string value) value)) ; "*"
 	 (name (string-append "Coin:" valu))
 	 (layer (car (gimp-layer-new image size size RGBA-IMAGE name 100 LAYER-MODE-NORMAL))))
+    (and msg-make-coin (message-string "card-make-coin:" image layer valu "gold:" gold "oval:" oval))
     (gimp-image-insert-layer image layer 0 0) ; parent 0 position 0
     (gimp-layer-set-offsets layer 0 0)
     (if (string? oval) (set! oval (string->number oval)))
     ;; x0 y0 w h
     (gimp-image-select-ellipse image CHANNEL-OP-REPLACE (/ (* size (- 1 oval)) 2) 0 (* size oval) size)
-    (gimp-context-set-foreground GOLD)	;
+    (gimp-context-set-foreground gold)	;
     (gimp-drawable-edit-fill layer FILL-FOREGROUND)
+    (gimp-layer-set-opacity layer alpha) ; so set-step can make invisible gold
     (gimp-selection-none image)
     (gimp-context-set-foreground BLACK)	;
     ;; make a small layer in upper left corner:
-    (let* ((x (- (normalize-x image cx) c))
+    (let* ((c (/ size 2))
+	   (x (- (normalize-x image cx) c))
 	   (y (- (normalize-y image cy) c))
 	   (font-size (floor (* .82 size))) ; expect Font=90 on Size=110
 	   (ty (if (equal? valu "*") (* (set! font-size size) .05) 0))
-	   (tl (card-make-text-layer image valu c ty CENTER font-size CARD-COIN-FONT BLACK nil))
+	   (tl (card-make-text-layer image valu c ty CENTER font-size font BLACK nil))
 	   (layer2 (car (gimp-image-merge-down image tl CLIP-TO-BOTTOM-LAYER))))
       ;; if r180?: rotate layer2 by 180; flip x=-x, y=-y and normalize; 
       ;; x = (normalize-x image (- x)) y = (normalize-y (- y))
@@ -392,6 +424,9 @@
     ;; tweak ('font "Override Font Name")
     (when (util-assq 'font tweaks)
 	  (set! fontname (util-assq 'font tweaks)))
+    ;; tweak ('color "Override text color")
+    (when (util-assq 'color tweaks)
+	  (set! color (util-assq 'color tweaks)))
     ;; tweak ('bold #t)
     (when (util-assq 'bold tweaks)
 	  ;; (message-string1 "Try boldify text:" fontname tweaks)
@@ -455,12 +490,6 @@
       ((bottom) (- height CARD-EDGE))
       ((center) (/ height 2))
       (else (if (>= y 0) y (+ y height))))))
-
-(define (card-base-layer image)
-  (let* ((layers (gimp-image-get-layers image))
-	 (nlayer (car layers))
-	 (layerv (cadr layers)))
-    (vector-ref layerv (- nlayer 1))))
 
 (define (card-dashify-name-ext name ext)
   (string-append (unbreakupstr (strbreakup name " ") "-") ext))
@@ -546,22 +575,58 @@
     (apply card-make-coin image cost cx cy size args) ; pass-thru if `(r180 #t)
     ))
 
+;;; like card-set-cost, but transparent coin:
+(define (card-set-step image step . args)
+  (if msg-set-vp (message-string1 "card-set-step" image step args))
+  (if (<= step 1) step			; do not show step = 1
+      (let* ((size CARD-COIN-SIZE)
+	     (rad (/ size 2))
+	     (cx (- 0 CARD-EDGE 2 rad))
+	     (cy cx))
+	(set! args `((alpha 0) ,@args))
+	(apply card-make-coin image step cx cy size args) ; just text, transparent coin/gold
+	))
+  )
+
 (define msg-set-vp #f)
 (define (card-set-vp image val . args)
+  ;; args: 'size 'lead 'left 'color
+  ;; (vp ('size 10) ('color BLACK) ...)
   ;;(gimp-context-set-background-color WHITE)
   (let* ((valu (if (number? val) (number->string val) val)) ; n
 	 (font-size (util-assq 'size args CARD-VP-SIZE))
 	 (ty (if (equal? valu "*") (* font-size .05) 0))
 	 (top (util-assq 'lead args ty))
 	 (left (util-assq 'left args 0))
+	 (color (util-assq 'color args WHITE))
+	 (fontn (util-assq 'font args CARD-VP-FONT))
 	 ;;(font-size CARD-VP-SIZE)
 	 (size (/ font-size .84))	; inferred radius
-	 ;;(width (card-text-layer-width valu font-size CARD-VP-FONT))
+	 ;;(width (card-text-layer-width valu font-size fontn))
 	 (x (- left (+ CARD-EDGE (/ size 2))))
-	 (y (- top (+ CARD-BOTTOM-BAND 4))))
-    (if msg-set-vp (message-string1 "card-set-vp" image val valu))
-    (card-make-text-layer image valu x y CENTER size CARD-VP-FONT WHITE nil))
+	 (y (- top (+ CARD-BOTTOM-BAND 4)))
+	 )
+    (if msg-set-vp (message-string1 "card-set-vp" image val valu size fontn color))
+    (card-make-text-layer image valu x y CENTER size fontn color nil))
   )
+
+
+;; Dir -> 'C'hoose Direction; (save "D" for Debt)
+(define ext-text `(("Base" "B") ("Dir" "C") ("Policy" "P") ("Event" "E") ("Event2" "E2")
+		   ("Road" "R") ("High Tech" "HT") ("Transit" "T")))
+(define self-ext `("Base" "Road" "High Tech" "Event" "Policy"))
+(define (card-set-ext image val . tweaks)
+  (if msg-set-vp (message-string1 "card-set-ext" image val tweaks))
+  (if (member val self-ext) val		; don't show obvious Extension name
+      (let* ((text (util-assoc val ext-text val))
+	     (edge (* CARD-EDGE .8))	  ; in the un-safe area...
+	     (size (* .3 CARD-COIN-SIZE)) ; tiny
+	     (x (- 0 edge (/ size 2)))	  ; on the edge; should be (- 0 edge (/ text-width 2)))
+	     (y (- 0 edge size)))	  ; as close as possible to bottom
+	(message-string "card-set-ext" text x y)
+	(apply card-make-text-layer-and-tweak image text x y CENTER size CARD-TEXT-FONT BLACK tweaks)))
+  )
+;;(define (card-make-text-layer-and-tweak image text x y justify size fontname color . tweaks))
 
 (define (card-set-line image y color margin thick)
   ;;(message-string1 "card-set-line" image y color margin thick)
@@ -617,52 +682,67 @@
   ;; (gimp-image-insert-layer image layer parent=0 pos=0 [top]) [or -1: above active layer]
   ;; new layer, paste, [scale], layer-set-offsets
 
+  (define (layer-width layer) (car (gimp-drawable-width layer)))
+  (define (layer-height layer) (car (gimp-drawable-height layer)))
+
   ;; set-title sets filename to "Title.png"
   (if (null? filename)
       (set! filename (image-basename image)))
 
-  (let ((x (util-opt-arg args 'center))
-	(y (util-opt-arg args 'center))
+  (let ((x (util-opt-arg args 'center))	; positional ASSERT (not (null? x))
+	(y (util-opt-arg args 'center))	; positional ASSERT (not (null? y))
 	(w (util-opt-arg args))
 	(h (util-opt-arg args)))
-    (if msg-set-image (message-string1 "card-set-image:" `(card-set-image ,image ,filename ,@(list x y w h))))
+    (if msg-set-image (message-string1 "card-set-image1:" `(card-set-image ,image ,filename ,@(list x y w h))))
 
     (let* ((filepath (string-append IMAGE-DIR filename))
 	   (msg1 (if msg-set-image (message-string "card-set-image: filepath =" filepath)))
 	   (layer (car (gimp-file-load-layer RUN-NONINTERACTIVE image filepath)))
+	   (iw (layer-width layer))
+	   (ih (layer-height layer))
 	   (regc (gimp-selection-bounds image)); (list 0 0 (card-width image) (card-height image))
 	   (reg0 (card-white-region image #f)) ; with CARD-EDGE margin (scale image into this region)
 	   (reg1 (card-white-region image #t)) ; full image width
-	   (msg2 (and msg-set-image (message-string "card-set-image: layer=" layer "reg0:" reg0 "reg1:" reg1 "regc:" regc)))
 	   )
+      (and msg-set-image (message-string "card-set-image2: layer=" layer "reg0:" reg0 "reg1:" reg1 "regc:" regc))
       (when (equal? x 'card)
-	    (set! x (nth 1 regc))
-	    (set! y (nth 2 regc))
-	    (set! w (nth 3 regc))
+	    (set! x (nth 1 regc))	; 0
+	    (set! y (nth 2 regc))	; 0
+	    (set! w (nth 3 regc))	; card-width
 	    (set! h (nth 4 regc)))
       (when (equal? x 'reg)
-	    (set! x (nth 0 reg1))
-	    (set! y (nth 1 reg1))
+	    (set! x (nth 0 reg1))	; 0
+	    (set! y (nth 1 reg1))	; white part
 	    (set! w (- (nth 2 reg1) x))
 	    (set! h (- (nth 3 reg1) y)))
-      (if msg-set-image (message-string "card-set-image:" image layer (list x y w h)))
-
-      ;;(message-string "card-set-image: layer=" layer)
+      (when (equal? x 'fit)
+	    (set! x (nth 0 reg0))	 ; generally: CARD-EDGE
+	    (set! w (- (nth 2 reg0) x))) ; scale width to fit
+      (when (equal? y 'fit)
+	    (set! y (nth 1 reg0))	 ; top of white
+	    (set! h (- (nth 3 reg0) y))) ; scale height to fit
+      (when (equal? y 'top)		 ; top 
+	    (set! y (nth 1 reg0)))	 ; of white part
+      
+      (if msg-set-image (message-string "card-set-image3:" image layer (list x y w h) (list iw ih)))
+      
       (gimp-image-insert-layer image layer 0 0)
       (gimp-item-set-name layer filename)
-      (when (and (not (null? w)) (not (null? h)))
-	    (if msg-set-image (message-string "card-set-image:" `(gimp-layer-scale ,layer ,w ,h ,TRUE)))
-	    (gimp-layer-scale layer w h TRUE))
-      ;; center 'layer' inside reg0: (inside CARD-EDGE and 'white' region)
+      (when (or (not (null? w)) (not (null? h))) ; re-scale image:
+	    (let* ((w (if (null? w) iw w))
+		   (h (if (null? h) ih (if (equal? h 'xs) (* ih (/ w iw)) h))))
+	      (if msg-set-image (message-string "card-set-image4:" `(gimp-layer-scale ,layer ,w ,h ,TRUE)))
+	      (gimp-layer-scale layer w h TRUE)))
+      ;; 'center inside reg0: (inside CARD-EDGE and 'white' region) [similar to 'fit]
       (when (equal? x 'center)
-      	    (set! x (card-center  (nth 0 reg0)  (nth 2 reg0) (car (gimp-drawable-width layer))))) ; after scaling layer
+      	    (set! x (card-center (nth 0 reg0) (nth 2 reg0) (layer-width layer)))) ; after scaling layer
       (when (equal? y 'center)
       	    (set! y (card-center  (nth 1 reg0)  (nth 3 reg0) (car (gimp-drawable-height layer))))) ; after scaling layer
       (if (not (null? x)) (set! x (normalize-x image x)))
       (if (not (null? y)) (set! y (normalize-y image y)))
-      (if msg-set-image (message-string1 "card-set-image:" image filename (list x y w h)))
+      (if msg-set-image (message-string1 "card-set-image5:" image filename (list x y w h)))
 
-      ;; push down to just above Background
+      ;; push down to just above Background (behind text & other graphics)
       (gimp-image-lower-item-to-bottom image layer)
       (gimp-image-raise-item image layer)
 
@@ -723,7 +803,7 @@
   (carloop extras (lambda (extra)
 	 (let* ((key (car extra))
 		(args (cdr extra)))
-	   (if msg-set-extras (message-string1 "card-set-extra:" key "args:" args))
+	   (if msg-set-extras (message-string1 "card-set-extra:" key args))
 	   (case key
 	     ((text)  (apply card-make-text-layer-and-tweak image args)) ; with tweaks
 	     ((text-low) (apply card-set-text-low image args)) ; with tweaks
@@ -731,11 +811,12 @@
 	     ((image) (apply card-set-image image args))
 	     ((coin)  (apply card-set-big-coin image args))
 	     ((fill)  (apply card-set-fill image args))
+	     ((step)  (apply card-set-step image args))
 	     ((vp)    (apply card-set-vp image args))
+	     ((ext)   (apply card-set-ext image args))
 	     ((subtype) (apply card-set-type image (car args) '(lineno 1) (cdr args))) ; on second line
 	     ((cardProps))		; nothing at this time
 	     ((filen))			; nothing at this time
-	     ((ext))			; nothing at this time
 	     (else (message-string1 "Unknown Extra:" key args))
 	     )))))
 
@@ -780,6 +861,7 @@
     image-layer
     ))
 
+;;; maybe from GTR? ensure card is filled with color to its original/current size
 (define (card-add-bleed image neww newh width color)
   ;; resize canvas to (outx outy) & CENTER
   ;; select-rr
@@ -794,7 +876,7 @@
 	 )
     (gimp-image-resize image neww newh cx cy)
     (gimp-layer-resize-to-image-size layer)
-    (card-select-rr image)
+    (card-select-rr image)		; select NEW card-size/shape
     (gimp-selection-shrink image width)
     (gimp-selection-invert image)
     (gimp-context-set-foreground color)
@@ -826,7 +908,7 @@
     (ceiling (/ (- ch cw) 2))))
 
 (define (get-dot-band)
-  (or DOT-BAND (set! DOT-BAND (square-portrait-bands TEMPLATE-CARD-SIZE))))
+  (or DOT-BAND (set! DOT-BAND (square-portrait-bands CARD-SIZE))))
 
 
 (define (make-dot-xy dot-band dot-edge dot-size)
@@ -937,12 +1019,14 @@
 	 (ny (+ band (/ (- white-size height) 2)))
 	 (nx 'center)
 	 (filen (string-append type "-" name))
+	 (ext (if (<= (string-length name) 1) "Base" "Dir"))
 	 )
 
     (card-set-title image name `(filen ,filen)) ; override filename
     (card-make-text-layer image name nx ny CENTER size fontn BLACK nil)
     (dir-bar image name block?)
     (card-set-type image type `(lineno .3))
+    (card-set-ext image ext)		; "Base" OR "Dir"
     (let ((name filen) (subtype name))
       (card-write-info filen (syms-to-alist nreps type name subtype)))
     image-layer)
@@ -1059,6 +1143,7 @@
 	    (layer (cadr image-layer))
 	    (n -1))
        (card-set-title image name `(color ,WHITE))
+       (card-set-extras image `((ext "Road")))
        ;;(card-set-extras image `((subtype ,subtype (color ,WHITE)))) ; idenfify as Transit
        (if (not (null? cost))
 	   (card-set-road-cost image cost))
@@ -1102,22 +1187,23 @@
     (string-append title xname typen)))
 
 (define msg-type-event #f)
-(define (card-type-event nreps type title color text . extras) ; [cost text2 ...]
-  ;;(if msg-type-event (message-string1 "card-type-event" type title color extras))
-  (let* ((cost	(util-opt-arg extras nil))
-	 (text2 (util-opt-arg extras nil))
-	 (ext   (util-assq 'ext extras (if (equal? type "Policy") "Policy" "Event")))
-	 (filen (card-xname title type extras)) ; filen-type
+(define (card-type-event nreps type title color text . extras) ; [cost text2 ((ext ?) (step ?) ...)]
+  (if msg-type-event (message-string1 "card-type-event" type title color extras))
+  (let* ((cost	(util-opt-arg extras nil)) ; positional arg 
+	 (text2 (util-opt-arg extras nil)) ; positional arg 
+	 (ext   (util-assq 'ext extras (if (equal? type "Event") "Event" "Policy")))
 	 (step  (util-assq 'step extras 1))
+	 (filen (card-xname title type extras)) ; filen-type
 	 (subtype (util-assq 'subtype extras nil)))
-    
+    (set! extras `((ext ,ext) (step ,step) ,@extras))
     (if msg-type-event (message-string1 "card-type-event" type title color cost text text2 extras))
+
     (ifgimp
      (let* ((image-layer (card-generic #f type title color cost text `(filen ,filen)))
 	    (image (car image-layer))
 	    (layer (cadr image-layer)))
        (card-set-text-low image text2)
-       (card-set-extras image extras)
+       (card-set-extras image extras) 	; set text, text-low, coin, step, vp...
        ;;(set!-eval-sym color)
        image-layer)
      (let ((name title) (props (cardprops extras)))
@@ -1132,8 +1218,10 @@
 	 (ext   (util-assq 'ext extras "Base"))
 	 (subtype (util-assq 'subtype extras nil))
 	 (vp (util-assq 'vp extras nil)))
+    (set! extras `((ext ,ext) (step, step) ,@extras))
     (if (equal? subtype "Transit") (set! color TRANSIT-COLOR))
     (if (equal? subtype "Com-Transit") (set! color COM-TRANSIT-COLOR))
+
     (ifgimp
      (let* ((image-layer (card-generic #t type title color cost () `(filen ,filen)))
 	    (image (car image-layer))
@@ -1215,6 +1303,7 @@
   (catch
    (begin (message-string "card-do-template-nreps catch" CARD-LOOP "nreps" nreps) #t)
    (while (and (> nreps 0) CARD-LOOP)
+	  ;; use script-fu-card-template.scm
 	  (card-to-template image (card-base-layer image) undo context) ; and save-if-template-full
 	  (set! nreps (- nreps 1)))))  
 
@@ -1231,7 +1320,7 @@
 	;; 'Parasite' (record 'display' on image so we can find/remove it later)
 	(para-set-display image display) 
 	(gimp-displays-flush)))
-  (if template? (card-do-template-nreps image nreps #f #t))
+  (if template? (card-do-template-nreps image nreps #f #t)) ; gimp-edit-copy/paste, rotate, set-offsets
   )
 
 ;;; Aux applications will override with calls to make-base-card-image, etc.
@@ -1304,7 +1393,7 @@
               ;;
               ((auction)    (apply card-type-auction nreps name args))
               ((back)       (apply card-type-back nreps name args)) ; with (nreps 1)
-	      ((skip)	    (next-slot-on-template nreps))	    ; leave a blank slot [but: backfill-ilxy]
+	      ((skip)	    (next-slot-on-template nreps)) ; leave a blank slot [but: backfill-ilxy]
               ;;
               ((aux)        (apply card-aux-proc nreps name args)) ; special case for external usage.
               ;; DIRECTIVES: (no image, no layer)
@@ -1316,16 +1405,21 @@
            (layer (cadr image-layer))	; layer or page-name
            )
       (and msg-make-one (message-string "make-card-image: MADE" image layer))
-      (when image   ; from (page) or (deck) or (not DO-GIMP)
-            (and msg-make-one (message-string1 "try scale image" (card-width image) (card-height image)))
-            (gimp-image-scale image (card-scale (card-width image)) (card-scale (card-height image)))
-            (and msg-make-one (message-string1 "try card-put-image" image nreps CARD-DISPLAY? DO-TEMPLATE))
+      (when image			; from (page) or (deck) or (not DO-GIMP)
+	    (and msg-make-one (message-string1 "try card-put-image" image nreps CARD-DISPLAY? DO-TEMPLATE))
+	    ;; put full scale image to display and/or template 
 	    (card-put-image image nreps CARD-DISPLAY? DO-TEMPLATE) ; maybe show card-image on DISPLAY & DO-TEMPLATE
-            (and msg-make-one (message-string1 "try merge-and-save" image))
             (let ((filename (car (gimp-image-get-filename image))))
               (and msg-make-one (message-string1 "try merge-and-save" filename))
-              (if (and (string? filename) (> (string-length filename) 0) CARD-SAVE-PNG)
-                  (file-merge-and-save image)))
+              (when (and (string? filename) (> (string-length filename) 0) CARD-SAVE-PNG)
+		    (when (equal? (card-width image) (car CARD-SIZE)) ; indicates unscaled
+			  (let ((w (card-scale (card-width image)))
+				(h (card-scale (card-height image))))
+			    (and msg-make-one (message-string1 "try scale image" w h))
+			    (gimp-image-scale image w h)))
+		    ;; save at current scale:
+		    (and msg-make-one (message-string1 "try file-merge-and-save" image))
+		    (file-merge-and-save image)))
             )
       image-layer)			; or (#f pagename)
     )
@@ -1349,7 +1443,7 @@
 (define (card-make-deck deck)
   ;; deck is array of array #(n, title, filename, type, ep stop rent cost text1 . extra
   ;; see: card-set-extras for capabilities of extra
-  (message-string1 "card-make-deck: n=" (vector-length deck))
+  (message-string "card-make-deck: n=" (vector-length deck))
 
   (and context (gimp-context-push))	; will be changing foreground color and brush-size
   (and context (gimp-context-set-defaults))
@@ -1406,8 +1500,8 @@
       (deck-write-final class))		; #t if success
 
     (message-string1 "card-make-deck-with-file" class filen DO-INFO)
-    (if (or (not filen) (not DO-INFO))	; if DO-INFO; maybe also CARD-DISPLAY?, maybe CARD-SAVE-PNG
-	(card-make-deck deck)		; no typescript/info, just card-do-template-nreps
+    (if (or (not filen) (not DO-INFO))
+	(card-make-deck deck)		; no typescript/info, no display/output
 
 	;; card-write-info with-output-to-file-catch:
 	(let* ((dirname (string-append BASE-DIR PROJECT-DIR "/cardinfo/"))
@@ -1439,6 +1533,17 @@
 (define (image-basename image)
   (util-file-basename (car (gimp-image-get-filename image))))
 
+;; remove (key value) from (props (k v) (k1 v1)), since (k v)is now in alist.
+;; must store the return value back to (cdr props)
+(define (remprop key plist nlist)
+  (if (null? nlist) (set! nlist (cons #t plist)))
+  (if (and (pair? plist) (list? plist))
+      (if (equal? key (caar plist)) (set-cdr! nlist (cdr plist))
+	  (remprop key (cdr plist) plist)))
+  (cdr nlist)
+  )
+
+
 (define msg-write-info #f)
 (define (card-write-info filen alist)
   ;; alist: cost, step, stop, rent, vp, ... props
@@ -1448,16 +1553,6 @@
 
   ;; [assoc-pair] true if pair has a non-null cdr: '(key val) [exclude: '(key)
   (define (apair? x) (and (pair? x) (not (null? (cdr x)))))
-
-  ;; remove (key value) from (props (k v) (k1 v1)), since (k v)is now in alist.
-  ;; must store the return value back to (cdr props)
-  (define (remprop key plist nlist)
-    (if (null? nlist) (set! nlist (cons #t plist)))
-    (if (and (pair? plist) (list? plist))
-	(if (equal? key (caar plist)) (set-cdr! nlist (cdr plist))
-	    (remprop key (cdr plist) plist)))
-    (cdr nlist)
-    )
 
   ;; so typescript can use type: number (rather than: number | string)
   (define (one-prop key alist)
@@ -1570,14 +1665,20 @@
 
 ;;; expandify to insert selected row vector-elt from selected DECK
 (define (mini-vec0 nreps deck name)
-  (vector-ref (mini-vec nreps deck name) 0))
+  (let ((v0 (vector-ref (mini-vec nreps deck name) 0)))
+    `(,nreps ,@(cdr v0))))
 
 (define BACK-DECK
   #((0 deck "BackDeck" "back-deck")
     (0 page "CityBack" #t)						  ; eject to new page
     (18 back "City-Back" GREY #t 60 60 "" (image "CitymapBack.png" card)) ; cityback
     (18 back "Tile Back" GREY #t 60 60 "" (image "CitymapBack.png" card)) ; cityback
-    (18 back "Event Back" GREY #f 60 60 "" (image "CitymapBack.png" card)) ; cityback
+    (18 back "Event Back" GREY #f 60 60 "" (image "CitymapBackL.png" card)) ; cityback
+    ))
+(define EVENT-BACK
+  #((0 deck "EventBack")
+    (0 page "EventBack")
+    (36 back "Event Back" GREY #f 60 60 "" (image "CitymapBackL.png" card)) ; cityback
     ))
 
 (define HOME-BACK
@@ -1778,6 +1879,7 @@
     ;; Commercial Attacks
 
     (4 com "Grocery" 2 0 1 1 "-1 Distance" ; weak attack; low margin business
+       (image () fit center nil xs)
        (subtype "Shop")
        (cardProps
 	(onStep (dist (add -1)))
@@ -1790,6 +1892,7 @@
 	 (costAdjust (add -3) (filter (onCard #t) (type "Policy")))) ; triggered by onStop, subject = Player
 	))
     (4 com "Cineplex"   4 -1 2 2 () (text-low "-1 Distance\nwhen leaving.") ; ~ "Bar"
+       (image () fit top nil xs)
        (subtype "Shop")
        (cardProps
 	(onMove (dist (add -1)))))
@@ -1798,7 +1901,7 @@
        (cardProps
 	(onStep (buys (add 1)))
 	(onMove (dist (add -2)))))
-    (4 com "Mall"       6 -1 "4*" 2 () (image () center center 492 414) ; "(temp?) Reverse Direction\nwhen leaving"
+    (4 com "Mall"       6 -1 "4*" 2 () (image () fit fit) ; "(temp?) Reverse Direction\nwhen leaving"
        (subtype "Shop")
        (cardProps
 	(stop 4)
@@ -1813,7 +1916,7 @@
     
     ;; MUNI: 
     ;; Maybe Commercial?
-    (4 mun "Plaza"      3 0 0 1 "-2 Distance" (image () )
+    (4 mun "Plaza"      3 0 0 1 "-2 Distance" (image ())
        (text-low "+ $1 Rent, + $1 Wages\nfor adjacent Commercial")
        (cardProps
 	(onStep (dist (add -2)))
@@ -1822,13 +1925,13 @@
 	))
 
     ;; PARKS & Recreation
-    (4 mun "Playground" 2 -1 0 0 "-1 Distance" (image ())
+    (4 mun "Playground" 2 -1 0 0 "-1 Distance" (image () fit)
        (text-low "+ $1 Rent adj Residential") (subtype "Park")
        (cardProps
 	(onStep (dist (add -1)))
 	(onBuild (rentAdjust (add 1) (filter (range 1) (type "Residential"))))
 	))
-    (4 mun "Park"       4  0 0 1 "-1 Distance" (image ()) (vp 1)
+    (4 mun "Park"       4  0 0 1 "-1 Distance" (image () fit) (vp 1)
        (text-low "+ $1 Rent adj Properties") (subtype "Park")
        (cardProps
 	(rent 0)			; because is self-adjacent, will be "1"
@@ -1836,13 +1939,13 @@
 	(onBuild (rentAdjust (add 1) (filter (range 1))))
 	))
     (4 mun "School"     5  1 1 1 "-1 Distance"
-       (text-low "+ $1 Rent adj Residential")  (image ()) (vp 1)
+       (text-low "+ $1 Rent adj Residential")  (image () fit center nil xs) (vp 1)
        (cardProps
 	(onStep (dist (add -1)))
 	(onBuild (rentAdjust (add 1) (filter (range 1) (type "Residential"))))
 	))
     (4 mun "Lake"       7 () () () "Distance = 1" (subtype "Park") ; not adjacent to other Transit !?
-       (text-low "+ $2 Rent\nfor adjacent Properties") (image ()) (vp 2)
+       (text-low "+ $2 Rent\nfor adjacent Properties") (image () fit) (vp 2)
        (text "No Stopping" center 300 CENTER 50 TEXTFONT RED (bold #t))
        (cardProps
 	(step 0) (stop 0) (rent 0) (noStop #t) ; cannot be rented, do show show a rentCounter
@@ -2022,6 +2125,7 @@
     ))
 
 (define EVENT-DECK
+  (expandify
   #((0 deck "EventDeck" "event-deck")         ; Class name and Filename.ts
     ;; nreps type COLOR "title" "text" cost "subtext"
     ;; YELLOW - Policy; Cost: Boon, No-Cost: Hex (Table)
@@ -2190,41 +2294,51 @@
     (2 deferred "Demolition" BLUE
        "Pay $2 to discard an eligible* tile." ()
        "Discard on your next Draw.\n*not owned by other Player & VP = 0" ; Bring-Your-Own-Build; this card just brings the bulldozer
+       (ext "Event")
        (step 3)
        (cardProps
         (event (doUrbanRenewal 2))))    ; set legalMark/buildCost on clickable Tiles
     (2 deferred "Another Move" BLUE "+1 Move\nWith next Distance" () "Discard on your next Draw."
+       (ext "Event")
        (step 3)
        (cardProps
         (moves (add 1)) ))              ; moves is reset by TurnBegin
     (2 deferred "Another Buy" BLUE "+1 Buy" () "Discard on your next Draw."
+       (ext "Event")
        (step 2)
        (cardProps
         (buys (add 1))))                ; buys is reset by TurnBegin.
     (2 deferred "Another Build" BLUE "+1 Build" () "Discard on your next Draw."
+       (ext "Event")
        (step 2)
        (cardProps
         (builds (add 1))))              ; builds is reset  by TurnBegin
     (2 deferred "Buy Discount" BLUE "- $3 on your next Buy\nNot less than 0" () "Discard on your next Draw."
+       (ext "Event")
        (step 3)
        (cardProps
         (untilBuys (costAdjust (add -3) (min 0))) ; until Player buys, card.costAdjust -= 3
         ))
     (2 deferred "Discount Buy" BLUE "Buy cost reduced by range\non your next Buy\nNot less than 1" () "Discard on your next Draw."
+       (ext "Event")
+       (step 1)
        (cardProps
         (untilBuys (costAdjust (sub range) (min 1))))) ; until Player buys, player.buildAdjust = -99
 
     (2 deferred "Build Discount" BLUE "- $3 on your next Build\nNot less than 0" () "Discard on your next Draw."
+       (ext "Event")
        (step 3)
        (cardProps
          (untilBuilds (buildAdjust (add -3) (min 0))) ; until Player builds, card.buildAdjust -= 3
         ))
     (2 deferred "Discount Build" BLUE "Build cost reduced by range\non your next Build\nNot less than 1" () "Discard on your next Draw."
+       (ext "Event")
        (step 1)
        (cardProps
         (untilBuilds (buildAdjust (sub range) (min 1))))) ; until Player builds, card.buildAdjust -= player.adjustedRange
 
     (2 deferred "Enterprise" BLUE "+1 Buy\n+1 Build\n+1 Range" () "Discard on your next Draw."
+       (ext "Event")
        (step 3)
        (cardProps
         (buys (add 1)) (builds (add 1))
@@ -2235,27 +2349,30 @@
     ;; GREEN Events: Bonus
     (1 event "Time Off" GREEN "Player with highest Cash:\nGo to Home.\n(and stop there)" () ()
        (subtype "Bonus")
+       (step 1)
        (xname "-cash")
        (cardProps
         (event (withPlayer high_total_cash (goTo (subtype "Home") (isOwner #f))))))
     (1 event "Time Off" GREEN "Player with highest Property:\nGo to Home.\n(and stop there)" () ()
        (subtype "Bonus")
+       (step 1)
        (xname "-property")
        (cardProps
         (event (withPlayer high_total_cost (goTo (subtype "Home") (isOwner #f))))))
     (1 event "Time Off" GREEN "Player with highest Rent:\nGo to Home.\n(and stop there)" () ()
        (subtype "Bonus")
+       (step 1)
        (xname "-rent")
        (cardProps 
         (event (withPlayer high_total_rent (goTo (subtype "Home") (isOwner #f))))))
-    (2 event "Win Lottery" GREEN "+ $* \n*2 x Next Distance." () () 
+    (2 event "Win Lottery" GREEN "+ $2 x Next Distance" () () 
        (subtype "Bonus")
        (step 3)
        (cardProps
-        (event  (coins (add2 nextDistance))))) ; Note: nextDistance does not trigger moveTo!
-                
+        (event  (coins (add2 nextDistance)))))
     (2 event "Go Home" GREEN "Go to your Home.\n(and stop there)" () ()
        (subtype "Bonus")
+       (step 1)
        (cardProps
         (event (goTo (subtype "Home") (isOwner #f)) (dist (set 0))))) ; #f: test owner of dest, not the source
     ;; with January semantics, this should .stepon(home) .stopon(home) so you get $1
@@ -2349,8 +2466,8 @@
     ;;
     ;; (0 page "EventBack" #t)             ; page-eject, make back on clean sheet:
     (mini-vec0 0 BACK-DECK "Event Back")
-    ))
-(expandify EVENT-DECK)
+    )))
+
 (define JAIL-DECK 
   #((0 deck "JailDeck" "jail-deck")
     (goJail 2 "Busted" "" "" 'this_player)
@@ -2361,9 +2478,12 @@
     ))
 (expandify JAIL-DECK)
 
-(define (temp-policy name text opers)
+(define (temp-policy name text step opers)
+  (let ((ext (if (equal? name "Road Repair") "Dir" "Policy")))
   `(2 temp ,name ORANGE ,text ()	; [cost text2 ...]  == ()
       "Place 3 owner tokens on this card. At start of your turn\nremove one. When all are gone discard this card."
+      (ext ,ext)
+      (step ,step)
       (cardProps
        ,@opers
        ;; will be acting on *own* card fields (card0[fieldName]) !
@@ -2372,9 +2492,11 @@
        (turnTokenCounter (counter #("turns left"))) ; player.color
        (onTurnStart (turnToken (add -1) (filter (isOwner #t)))
 		    (when (le (turnToken 0)) (discard #t)))
-       )))
+       ))))
 
 (define POLICY-DECK
+  (expandify
+
   ;; Q: does one pay to establish a Policy?
   ;; Yes: Cost includes "policy action" to put it effect.
   ;;      Therefore; you must have a Policy Action to Buy a Policy!
@@ -2402,34 +2524,42 @@
     ;;     (0 page "Policy")
     ;; n type title text [cost] [below-line-text]
     (2 policy "Increase Distance" YELLOW   "+1 Distance on each Move" 3 ()
+       (step 2)
        (cardProps
         (onMove (dist (add 1))))) ; Note: may happen before OR after distChoice...
 
     (2 policy "Adjust Distance 1" YELLOW "+1 Distance\nor\n-1 Distance" 4 "Not less than 1."
+       (step 3)
        (cardProps
         (onBuild (distAdjust (distChoice (high 1) (low -1))))))
     (2 policy "Adjust Distance 2" YELLOW "+2 Distance\nor\n-2 Distance" 5 "Not less than 1."
+       (step 3)
        (cardProps
         (onBuild (distAdjust (distChoice (high 2) (low -1))))))
     ;;
     (2 policy "Buy More" YELLOW "+1 Buy each turn." 5 ()
+       (step 3)
        (cardProps
         (buys (add 1))
         (onTurnStart (buys (add 1))))) ; More Buy (buysAdjust ?)
 
     (2 policy "Build More" YELLOW "+1 Build each turn." 4 ()
+       (step 3)
        (cardProps
         (builds (add 1))
         (onTurnStart (builds (add 1))))) ; (buildsAdjust ?)
 
     (2 policy "Build Farther" YELLOW "+1 Range of Action" () ()
+       (step 2)
        (cardProps
         (onBuild (rangeAdjust (add 1))))) ;; Gov decree
 
     (2 policy "Build Nearer" YELLOW  "-1 Range of Action" () "Not less than 1."
+       (step 2)
        (cardProps
         (onBuild (rangeAdjust (add -1) (min 1)))))
     (2 policy "Fuel Rationing" YELLOW "-1 Distance on each Move" () "Not less than 1."
+       (step 2)
        (cardProps
         (onMove (dist (add -1) (min 1))))) ; or (distAdjust ?)
     ;; when computing effective distance or range: include distAdust & rangeAdjust
@@ -2437,99 +2567,137 @@
     ;;(2 policy YELLOW "Family Values" "+ $2 for stopping at your Home." 3)
 
     (2 policy "Draw Another" YELLOW "Pay $1 and Draw another card\nwhen you Draw." 4 "Process drawn cards in any order."
+       (step 3)
        (cardProps
         (onBuild (coins (add -1)) (drawNAdjust (add 1))))) ; when doing "draw", draw N cards.
     (2 policy "Draw Again" YELLOW "Pay $1 and get +1 Draw\nat start of each turn." 4 "whether or not you use the Draw"
+       (step 3)
        (cardProps
         (onTurnStart (coins (add -1)) (draws (add 1))))) ; at start of turn, set player.draws = turnDraws
     (2 policy "Move Again" YELLOW "Pay $1 and get +1 Move Action\nat start each turn." 4 ()
+       (step 2)
        (cardProps
         (onTurnStart (coins (add -1)) (moves (add 1)))))
     (2 policy "Flexible Itenerary" YELLOW "When you flip a first Distance card\nyou may flip a second Distance card." 3 ()
+       (step 2)
        (cardProps
         (onGetDist (when (offerChoice "Flip second dist?") (dist (set nextDistance)))))) ;; 
     ;; propbably generic code to activate a Policy.. if card.cont == table.policySlots vs player.plyrPolis
     ;;
     (2 policy "Road Repair" YELLOW "Movement N is blocked." () () (xname "-N")
+       (ext "Dir")
+       (step 2)
        (cardProps
         (onBuild (blockedDirAdjust (include #( "N" )))))) ; blockedDir is a Bag, not a set
     (2 policy "Road Repair" YELLOW "Movement E is blocked." () () (xname "-E")
+       (ext "Dir")
+       (step 2)
        (cardProps
         (onBuild (blockedDirAdjust (include #( "E" )))))) ; maybe: (blockedDir (include "E"))
     (2 policy "Road Repair" YELLOW "Movement S is blocked." () () (xname "-S")
+       (ext "Dir")
+       (step 2)
        (cardProps
         (onBuild (blockedDirAdjust (include #( "S" ))))))
     (2 policy "Road Repair" YELLOW "Movement W is blocked." () () (xname "-W")
+       (ext "Dir")
+       (step 2)
        (cardProps
         (onBuild (blockedDirAdjust (include #( "W" ))))))
     (2 policy "Discount to Build" YELLOW "- $1 on each Build" () "Not less than 1."
+       (step 1)
        (cardProps
         (onBuild (buildAdjust (add -1) (min 1)))))
     (2 policy "Bail Bond" YELLOW "No effects when you Stop in Jail" () ()
+       (step 1)
        (cardProps                       ; OR: all Cards are suppressible by name. doResponses checks.
-        (onBuild (special (suppressCard "Jail")))))
+        (special (suppressCard "Jail"))))
 
     ;; move dist *then* apply penalties:
     (2 policy "Overtime Penalty" YELLOW "-1 Move\n- $2\nIf you move Distance 5 or more." () ()
+       (step 1)
        (cardProps                       ; move may be blocked at less than orig distance, or extended by transit
         (onStop (when (gt (distMoved 4)) (coins (add -2)) (moves (add -1))))))
     (2 policy "Overtime Bonus" YELLOW "+ $2\nIf you move Distance 5 or more." () ()
+       (step 1)
        (cardProps                       ; move may be blocked at less than orig distance, or extended by transit
         (onStop (when (gt (distMoved 4)) (coins (add 2))))))
 
     (2 policy "Speed Limit" YELLOW "Maximum Distance = 4." () ()
+       (step 1)
        (cardProps
         (onMove (dist (max 4)))))
     ;;(2 policy YELLOW "Shoddy Workmanship" "Remove 1 House if you stop\nat your own Residential property." 4 ())
     ;; OR remove on BUILDING at your Residential Property (so: if you have ONLY a Tower...)
 
     (2 policy "Minimum Wage" YELLOW " $2 min Wages" 2 ()  ; or 0? 
+       (step 2)
        (cardProps
         (onBuild (stopAdjust (min 2) )))) ; note that later effects may override
     (2 policy "Labor Shortage" YELLOW "+ $2 to all Wages" 3 ()
+       (step 2)
        (cardProps
         (onBuild (stopAdjust (add 2))))) ; for each card on which player steps this turn
     ;;
     (2 policy "Urban Renewal" YELLOW "Pay $2 to build on eligible* lot." 4
        "*not owned by other player & VP = 0"
        ;; dragStart: identify vacant lots, dropped: remove tile (return policy to policySlots)
+       (step 3)
        (cardProps
         (special (doUrbanRenewal 2))))  ; legalMark/buildCost on clickable Tiles
     ;; dragStart: identify vacant lots, dropped: remove tile (return policy to policySlots)
     ;; (buildAdjust (add 2)), allowDrop() 
 
     (2 policy "Zoning: No Houses" YELLOW "May not build Houses.\n(on Residential)" () ()
+       (step 2)
        (cardProps
         (special (configBuy NoHouse)))) ;
     (2 policy "Zoning: Only Houses" YELLOW "May only build Houses.\n(on Residential)" () ()
+       (step 2)
        (cardProps
         (special (configBuy OnlyHouse)))) ; (on (configBuy ...))
 
     (1 policy "Price of Power" YELLOW "- $1 at start of turn\nfrom Player with highest\nCash on hand."
        3 () (xname "-cash")             ; filter on target player == curPlayer ?? AND/OR need way to sell props to city
+       (step 1)
        (cardProps
         (onTurnStart (withPlayer high_total_cash (coins (add -1))))))
     (1 policy "Price of Power" YELLOW "- $2 at start of turn\nfrom Player with highest\nProperty Cost."
        4 () (xname "-property")
+       (step 2)
        (cardProps
         (onTurnStart (withPlayer high_total_cost (coins (add -2))))))
     (1 policy "Price of Power" YELLOW "- $3 at start of turn\nfrom Player with highest\ntotal Rent."
        5 () (xname "-rent")
+       (step 3)
        (cardProps                       ; each turn, compute (player high_total_rent) act if == curPlayer
         (onTurnStart (withPlayer high_total_rent (coins (add -3))))))
 
     (temp-policy "Boom Times" "+1 Buy\n- $2 to Build.\nNot less than 1."
-                 '((buys (add 1)) (onBuild (buildAdjust (add -2) (min 1)))))
+                 1 '((buys (add 1)) (onBuild (buildAdjust (add -2) (min 1)))))
     (temp-policy "Fuel Shortage" "-1 Distance.\nNot less than 1."
-                 '((onMove (dist (add -1) (min 1)))))
+                 2 '((onMove (dist (add -1) (min 1)))))
     (temp-policy "Road Repair" "EW movement is blocked"
-                 '((onMove (blockedDirAdjust (include #( "E" "W" ))))))
+                 2 '((onMove (blockedDirAdjust (include #( "E" "W" ))))))
     (temp-policy "Road Repair" "NS movement is blocked"
-                 '((onMove (blockedDirAdjust (include #( "N" "S" ))))))
+                 2 '((onMove (blockedDirAdjust (include #( "N" "S" ))))))
 
     ;; Use "Event Back"
-    ))
-(expandify POLICY-DECK)
+    )))
+
+(define TEMP-DECK
+  (expandify
+   #(
+     (temp-policy "Boom Times" "+1 Buy\n- $2 to Build.\nNot less than 1."
+		  1 '((buys (add 1)) (onBuild (buildAdjust (add -2) (min 1)))))
+     (temp-policy "Fuel Shortage" "-1 Distance.\nNot less than 1."
+		  2 '((onMove (dist (add -1) (min 1)))))
+     (temp-policy "Road Repair" "EW movement is blocked"
+		  2 '((onMove (blockedDirAdjust (include #( "E" "W" ))))))
+     (temp-policy "Road Repair" "NS movement is blocked"
+		  2 '((onMove (blockedDirAdjust (include #( "N" "S" ))))))
+    
+     )))
 
 ;; (define (color-dots color dist)
 ;;   let ((num (if (< dist 4) 2 1))
@@ -2693,6 +2861,7 @@
     ))
 
 (define TECH-DECK			; alternative TestDeck
+  (expandify
   #((0 deck "TechDeck" "tech-deck")
     ;; (0 page "HighTech" #t)
     ;; Original (FAANG)
@@ -2709,10 +2878,10 @@
     (high-tech "High Tech" "Internet Ads")    ; Google
     ;;(0 page "TileBack" #t) 		; page-eject, make back on clean sheet:
     ;;(10 back "Tile Back" GREY #t 260 260 "Tile")
-    ))
-(expandify TECH-DECK)
+    )))
 
 (define TEST-DECK
+  (expandify
   #((0 deck "TestDeck" "test-deck")
     (0 page "Test" #t)
 
@@ -2735,8 +2904,7 @@
     ;;(1 road "Express Lane" 2 (S S S S) (cardProps (onStep (payOwner (set rent)))))
 
     (1 back "City-Back" GREY #t 260 260 "" (image "CitymapBack.png" 0 0))		; cityback
-    ))
-(expandify TEST-DECK)
+    )))
 
 (define LAKE (mini-vec 0 TILE-DECK "Lake"))
 
@@ -2804,11 +2972,9 @@
 ;;; independent of DO-TEMPLATE
 (define (make-a-deck deck-str do-gimp)
   (try-load-aux-proj AUX-PROJ-NAME)
-  (set! DO-INFO #t)			; always make-info (can revert in vscode/git)
-  (set! DO-TEMPLATE #f)			; never make make template
-  (set! DO-GIMP do-gimp)		; #f: INFO-only, #t INFO & PNGs
-  (set! CARD-SAVE-PNG do-gimp)
+  (set! DO-GIMP do-gimp)		; #f: INFO-only, #t INFO & PNGs [controls ifgimp macro]
 
+  (message-string1 "make-a-deck" deck-str do-gimp)
   (if (string-contains deck-str ":")
       ;; make a mini-vec with the requested card-spec, possibly reset nreps
       ;; and do not make a text file
@@ -2826,19 +2992,28 @@
 	;; with-card-display [without fluid-let]
 	(let ((orig-display CARD-DISPLAY?))
 	  (set! CARD-DISPLAY? display?)
-	  (catch #t (card-make-deck deck))
+	  (catch t (card-make-deck deck))
 	  (set! CARD-DISPLAY? orig-display)))
       
       ;; ELSE just make the full deck:
-      (if (equal? deck-str "ALL")
-	  (for-each card-make-deck-with-file
-		    (list DOTS-DECK DIR-DECK ALIGN-DECK HOME-DECK	       ; special backs
-			  TILE-DECK EVENT-DECK POLICY-DECK TECH-DECK ROAD-DECK ; City-Back
-			  ))
-	  (card-make-deck-with-file (eval (string->symbol deck-str)))))
+      (cond
+       ((equal? deck-str "ALL")
+	(for-each card-make-deck-with-file
+		  (list DOTS-DECK DIR-DECK ALIGN-DECK HOME-DECK		     ; special backs
+			TILE-DECK EVENT-DECK POLICY-DECK TECH-DECK ROAD-DECK ; City-Back
+			)))
+       ((equal? deck-str "CARDS")
+	(for-each card-make-deck-with-file
+		  (list HOME-DECK					     ; special backs
+			TILE-DECK EVENT-DECK POLICY-DECK TECH-DECK ROAD-DECK ; City-Back
+			)))
+       ((equal? deck-str "HORIZ")
+	(for-each card-make-deck-with-file
+		  (list EVENT-DECK POLICY-DECK)))
+       (else
+	(card-make-deck-with-file (eval (string->symbol deck-str)))))
+      )
   )
-
-;;; LAST-ILXY holds the (image-layer-x-y) where card-to-template put the previous image-layer [script-fu-template-n]
 
 (define (card-get-aux) (message-string1 "orig aux") #())
 (define AUX-PROJ-NAME #f)		; path to aux script
@@ -2852,8 +3027,8 @@
   (let* ((image-list (vector->list (cadr (gimp-image-list)))))
     (for-each (lambda (id)
 		(message-string1 "try delete image" id)
-		(para-kill-display id)
 		(catch (begin (message-string "skip image:" id))
+		       (para-kill-display id)
 		       (if (= TRUE (car (gimp-image-is-valid id))) (gimp-image-delete id)))
 		)
 	      image-list)
