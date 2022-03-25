@@ -17,7 +17,7 @@
 ;;;                          TEMPLATE-FILE TEMPLATE-CARD-SIZE TEMPLATE-MIN-OFFSET-INC
 (define PPG-POKER-18-SPEC '("PPGPoker18-0.png" (1108 808) 120 233 190 85 1125 825))
 (define MY-POKER-8-SPEC   '("MyPoker8-0.png"   (1108 808)  11 233 190 85 1125 825)) ; full-bleed
-(define PPG-MINI-36-SPEC  '("PPGMiniCard36-0.png" (800 575) 150 100 60 60 833 577.5 )) ; 12" x 18" -> 32 Cards
+(define PPG-MINI-36-SPEC  '("PPGMiniCard36-0.png" (800 575) 150 100 60 60 833 578.25 )) ; 12" x 18" -> 32 Cards
 (define MY-MINI-18-SPEC   '("MyMiniCard18-0.png"  (750 525)  84  25 60 60 752 527)) ; no bleed
 (define MY-MICRO-18-SPEC  '("MyMiniCard18-0.png"  (250 175)  84  25 60 60 752 527)) ; no bleed
 
@@ -188,19 +188,19 @@
     (and context (gimp-context-set-defaults))
 
     (gimp-context-set-transform-resize TRANSFORM-RESIZE-ADJUST)
-    (let* ((rotImage (car (gimp-edit-paste-as-new-image)))
+    (let* ((rotImage (car (gimp-edit-paste-as-new-image))) ; edit-paste, [rotate], edit-copy
 	   (rotLayer (car (gimp-image-get-active-layer rotImage)))
 	   (floatLayer 0))
       (maybeRotate rotLayer (< srcW srcH) (template-orientation))
-      (gimp-edit-copy rotLayer) ; rotated image to edit-buffer
-      (set! floatLayer (car (gimp-edit-paste destLayer TRUE)))
+      (gimp-edit-copy rotLayer)				       ; rotated image to edit-buffer
+      (set! floatLayer (car (gimp-edit-paste destLayer TRUE))) ; paste to template
       ;;(gimp-drawable-offset floatLayer FALSE OFFSET-TRANSPARENT destX destY)
       (gimp-layer-set-offsets floatLayer destX destY)
+      (gimp-floating-sel-anchor floatLayer)
+      (gimp-image-delete rotImage)
       (gimp-displays-flush)
       ;; Record cross-links in parasites
       (card-parasite-record-image image destImage destLayer destX destY)
-      (gimp-floating-sel-anchor floatLayer)
-      (gimp-image-delete rotImage)
       )
     (and context (gimp-context-pop))
     (gimp-displays-flush)
