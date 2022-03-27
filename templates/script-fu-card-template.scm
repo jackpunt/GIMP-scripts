@@ -1,33 +1,50 @@
 ;;; This directory in the GIMP Preferences for 'scripts'
 ;;; /Users/jpeck/Google Drive/jpeckj/GIMP/2.10/scripts
-
 (require "templates/script-fu-para-cards.scm" 'file-merge-and-save)
 
-;;; Exports: card-to-template, use-template
+;;; Exports: image-to-template, use-template
 ;;; ALSO:
 ;;;(define next-ilxy             (nth 0 ENTRY-POINTS))
 ;;;(define next-ilxy-empty       (nth 1 ENTRY-POINTS))
 ;;;(define next-image-layer-xy   (nth 2 ENTRY-POINTS))
 ;;;(define save-if-template-full (nth 3 ENTRY-POINTS)) ; EXTERNAL access
-
+(define (no-bleed-template bleed template)
+  (let* ((file (car template))
+	 (size (cadr template))
+	 (offset (cddr template))
+	 (w (nth 0 size))
+	 (h (nth 1 size))
+	 (x (nth 0 offset))
+	 (y (nth 1 offset))
+	 (sizeb (list (- w bleed bleed) (- h bleed bleed)))
+	 (offsb `(,(+ bleed x) ,(+ bleed y) ,@(cddr offset)))
+	 )
+    `(,file ,sizeb ,@offsb)))
 
 (define BASE-DIR "/Users/jpeck/Google Drive/jpeckj/")
 
 ;;; TEMPLATE (width height) [generally: the card in LANDSCAPE]
 ;;;                          TEMPLATE-FILE TEMPLATE-CARD-SIZE TEMPLATE-MIN-OFFSET-INC
-(define PPG-POKER-18-SPEC '("PPGPoker18-0.png" (1108 808) 120 233 190 85 1125 825))
-(define MY-POKER-8-SPEC   '("MyPoker8-0.png"   (1108 808)  11 233 190 85 1125 825)) ; full-bleed
-(define PPG-MINI-36-SPEC  '("PPGMiniCard36-0.png" (800 575) 150 100 60 60 833 578.25 )) ; 12" x 18" -> 32 Cards
-(define MY-MINI-18-SPEC   '("MyMiniCard18-0.png"  (750 525)  84  25 60 60 752 527)) ; no bleed
-(define MY-MICRO-18-SPEC  '("MyMiniCard18-0.png"  (250 175)  84  25 60 60 752 527)) ; no bleed
+(define PPG-POKER-18-SPEC '("PPGPoker18-0.png" (1108 808) 120 233 190 85 1125 825 50 62))
+(define PPG-MINI-36-SPEC  '("PPGMiniCard36-0.png" (800 575) 150 100 60 60 833 578.25 50 62)) ; 12" x 18" -> 32 Cards
+(define PPG-MINI-36-BLEED (no-bleed-template 25 PPG-MINI-36-SPEC))
+(define MY-POKER-8-SPEC   '("MyPoker8-0.png"   (1108 808)  11 233 190 85 1125 825 25 37)) ; full-bleed
+(define MY-MINI-18-SPEC   '("MyMiniCard18-0.png"  (750 525)  84  25 60 60 752 527 25 37)) ; no bleed
+(define MY-MICRO-18-SPEC  '("MyMiniCard18-0.png"  (250 175)  84  25 60 60 752 527 25 37)) ; no bleed
+;; 115 * 6 = 690 < 750, 115*4 = 460 < 525
+;; 117 * 6 = 702 < 750, 117*4 = 468 < 525
+(define MY-TOKEN-24-SPEC  `("MyTokenSpec-0.png"   (115 115)  24  14 57 57 117 117  1  1)) ; inside MINI card
+
 
 ;;; choose with (template-use 'project-dir' SOME-SPEC)
 
 (define TEMPLATE-FILE (car MY-MINI-18-SPEC))
-(define TEMPLATE-CARD-SIZE (cadr MY-MINI-18-SPEC))
+(define TEMPLATE-CARD-SIZE (apply list (cadr MY-MINI-18-SPEC))) ; copy just to be safe
 (define TEMPLATE-MIN-OFFSET-INC (cddr MY-MINI-18-SPEC))
 (define TEMPLATE-XMIN (nth 0 TEMPLATE-MIN-OFFSET-INC))
 (define TEMPLATE-YMIN (nth 1 TEMPLATE-MIN-OFFSET-INC))
+(define TEMPLATE-EDGE (nth 6 TEMPLATE-MIN-OFFSET-INC))
+(define TEMPLATE-RADI (nth 7 TEMPLATE-MIN-OFFSET-INC))
 
 (define PROJECT-DIR "")
 (define IMAGE-DIR BASE-DIR)
@@ -44,10 +61,12 @@
 
 (define (set-template-spec spec)
   (set! TEMPLATE-FILE (car spec))
-  (set! TEMPLATE-CARD-SIZE (cadr spec))
-  (set! TEMPLATE-MIN-OFFSET-INC (cddr spec))
+  (set! TEMPLATE-CARD-SIZE (apply list (cadr spec))) ; copy just to be safe
+  (set! TEMPLATE-MIN-OFFSET-INC (apply list (cddr spec)))
   (set! TEMPLATE-XMIN (nth 0 TEMPLATE-MIN-OFFSET-INC))
   (set! TEMPLATE-YMIN (nth 1 TEMPLATE-MIN-OFFSET-INC))
+  (set! TEMPLATE-EDGE (nth 6 TEMPLATE-MIN-OFFSET-INC))
+  (set! TEMPLATE-RADI (nth 7 TEMPLATE-MIN-OFFSET-INC))
   )
 
 ;;; User/Caller use this to configure TEMPLATE
@@ -91,15 +110,15 @@
 (define (script-fu-template-n image drawable nreps)
   ;;(message-string "N to template: " nreps)
   (while (> nreps 0)
-	 (card-to-template image drawable #t #t)
+	 (image-to-template image drawable #t #t)
 	 (set! nreps (- nreps 1)))
   )
 	   
 (define (script-fu-template image drawable)
-  (card-to-template image drawable #t #t)
+  (image-to-template image drawable #t #t)
   )
 (define (script-fu-template-debug image drawable)
-  (card-to-template image drawable #f #t)
+  (image-to-template image drawable #f #t)
   )
 
 (define (starts-with? str prefix) (string-prefix? prefix str))
@@ -146,13 +165,13 @@
     (message-string "use-template:" LAST-ILXY (gimp-image-get-filename (car LAST-ILXY)) "empty=" TEMPLATE-EMPTY )
     ))
 
-(define msg-ctt #f)
-(define (card-to-template image drawable undo context)
+(define msg-ctt #t)
+(define (image-to-template image drawable undo context)
   ;; image to next open slot, updating LAST-ILXY
   ;; if use-template has NOT been called, start default TEMPLATE-FILE:
   (if (< (car LAST-ILXY) 0)
       (let ((filename (string-append TEMPLATE-DIR TEMPLATE-FILE)))
-	(and msg-ctt (message-string "ctt-0: START-NEW LAST-ILXY=" LAST-ILXY "image" image))
+	(and msg-ctt (message-string "ctt-0: START-NEW LAST-ILXY=" LAST-ILXY "image" image TEMPLATE-FILE))
 	(set-ilxy (next-image-layer-xy -1 -1 filename))))
 
   (and msg-ctt (message-string "ctt-1:" image drawable undo context" LAST-ILXY=" LAST-ILXY))
@@ -222,7 +241,7 @@
   )
 
 ;;(define sfct (make-environment
-(define (get-entrypoints) 
+;;(define (get-entrypoints) 
   ;; template paramters:
   (define (xmin) TEMPLATE-XMIN)		; loc of left edge of cards on template
   (define (ymin) TEMPLATE-YMIN)		; loc of top row of cards on template
@@ -351,8 +370,8 @@
 	;; Called with ( -1 -1 . file) by use-template [image-file]
 	;; or *first* invocation: [TEMPLATE-FILE]
 	(let* ((filename (if (pair? file)
-			     (car file)				      ; use given/new filename
-			     (car (gimp-image-get-filename image0)))) ; filename of current image
+			     (car file)				     ; use given/new template name
+			     (car (gimp-image-get-filename image)))) ; filename of current template
 	       (image (next-template-image filename)) ; -N+1.png
 	       (layer (image-base-layer image))
 	       (ilxy (list image layer (xmin) (ymin)))
@@ -393,7 +412,7 @@
       cname
       ))
 
-  ;;; either repeated (card-to-template...) OR explicit 'flush' by caller, with ((car alt) = #t)
+  ;;; either repeated (image-to-template...) OR explicit 'flush' by caller, with ((car alt) = #t)
   ;; return (car (is-template-full? LAST-ILXY)) [Mar 2022]
   (define (save-if-template-full . alt)
     ;; Save template associated with LAST-ILXY [exported API]
@@ -457,12 +476,12 @@
 	   is-card-at xoff yoff xmin ymin
 	   is-template-full? cardw cardh xinc yinc;  xmin ymin
 	   )
-  )
+;;  )
 
-(define ENTRY-POINTS (get-entrypoints))
+;;(define ENTRY-POINTS (get-entrypoints))
 ;;(message-string "sfct: ENTRY-POINTS =" ENTRY-POINTS)
-(eval ENTRY-POINTS)			; export ENTRY-POINTS
-
+;;(eval ENTRY-POINTS)			; export ENTRY-POINTS
+(define ENTRY-POINT #t)
 		
 (sf-reg "use-template" "y-Use Template" "restart with this template"
 	"RGB* GRAY*"
@@ -489,12 +508,9 @@
 	SF-DRAWABLE "Input Drawable (layer)" 0
 	)
 
-(gimp-message "loaded script-fu-card-template")
+(message-string "loaded script-fu-card-template")
 
 
 ;;; Local Variables:
-;;; eval: (make-variable-buffer-local 'backup-file-path)
-;;; eval: (setq backup-file-path "~/Data/Programs/ng/citymap/src/app/cardinfo/script-fu-card-template.scm")
-;;; eval: (defun backup-est-deck () (write-region (point-min) (point-max) backup-file-path))
-;;; before-save-hook: backup-est-deck
+;;; eval: (save-backup "~/Data/Programs/ng/citymap/src/app/cardinfo/script-fu-card-template.scm")
 ;;; End:

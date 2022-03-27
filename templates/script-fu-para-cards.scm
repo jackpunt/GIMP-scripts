@@ -11,6 +11,48 @@
 ;;; pname is location of card: `card-in:I:L:X:Y` --> image-id: number
 ;;; para-set-comment [gimp-comment], para-set-display [card-display], para-set-pubname, para-set-global-pubname
 
+(macro (def-para-set form)	 ; (def-para-set para-set-display "card-display" number->string)
+  (let* ((para-set (nth 1 form))
+	 (para-name (nth 2 form))
+	 (valuform (if (> (length form) 3) (list (nth 3 form) 'value) 'value))
+	 (set-form `(gimp-image-attach-parasite image (list ,para-name 1 ,valuform))))
+    `(define (,para-set image value) ,set-form value)))
+
+;; TODO: use util-assq to obtain get-form, msg, catch-form...?
+(macro (def-para-get form)	 ; (def-para-get para-get-display "card-display" string->number)
+  (let* ((para-get (nth 1 form))
+	 (para-name (nth 2 form))
+	 (get-form `(nth 2 (car (gimp-image-get-parasite image ,para-name))))
+	 (msg-str (string-append para-name ":")))
+    `(define (,para-get image)
+       ;; squelch the message: Procedure execution of gimp-image-get-parasite failed
+       (catcherr (lambda (err) (message-string ,msg-str image err) #f)
+	 ,(if (> (length form) 3) `(,(nth 3 form) ,get-form) get-form))
+       )))
+
+(define (para-set-display image value)
+  (gimp-image-attach-parasite image (list "card-display" 1 (number->string 'value)))
+  value)
+
+
+(def-para-set para-set-comment "gimp-comment")
+(def-para-get para-get-comment "gimp-comment")
+
+(def-para-set para-set-display "card-display" number->string) ; TODO: message-string when setting?
+(def-para-get para-get-display "card-display" string->number) ; TODO? check result using (gimp-display-is-valid)
+
+(def-para-set para-set-pubname "card-pubname")
+(def-para-get para-get-pubname "card-pubname")
+
+(define (para-set-global-pubname pubname)
+  (gimp-attach-parasite (list "card-global-pubname" 1 pubname)) pubname)
+
+(define (para-get-global-pubname)
+  (catcherr (lambda (err) (message-string "para-get-global-pubname:" err ) #f)
+    (nth 2 (car (gimp-get-parasite "card-global-pubname")))))
+
+;; subsequent -get- will return #f
+(define (para-unset-global-pubname) (gimp-detach-parasite "card-global-pubname"))
 
 ;;; Advice in card-to-this-ilxy
 (define (card-parasite-record-image image destImage destLayer destX destY)
@@ -57,35 +99,6 @@
 (define (sf-close-card-images destImage)
   ;; (close-card-image card-id pname destImage destLayer)
   (process-card-images destImage close-card-image))  
-
-(define (para-set-display image display)
-  ;; assert: (number? display)
-  (message-string "para-set-display" image display)
-  (gimp-image-attach-parasite image (list "card-display" 1 (number->string display)))
-  display)
-
-(define (para-get-display image)
-  ;; check result using (gimp-display-is-valid)
-  (catch (lambda(err) (message-string "para-get-display" image err) #f)
-	 (string->number (nth 2 (car (gimp-image-get-parasite image "card-display"))))))
-
-(define (para-set-global-pubname pubname)
-  (gimp-attach-parasite (list "card-global-pubname" 1 pubname)) pubname)
-
-(define (para-get-global-pubname)
-  (catch #f (nth 2 (car (gimp-get-parasite "card-global-pubname")))))
-
-(define (para-unset-global-pubname)
-  ;; provoke -get- to return #f
-  (gimp-detach-parasite "card-global-pubname"))
-
-(define (para-set-pubname image pubname)
-  ;; assert: (string? pubname)
-  (gimp-image-attach-parasite image (list "card-pubname" 1 pubname)) pubname)
-
-(define (para-get-pubname image)
-  (catch (lambda(err) (message-string "para-get-pubname" image err) #f)
-	 (nth 2 (car (gimp-image-get-parasite image "card-pubname")))))
 
 
 ;;; card-id = "card-name.png"
@@ -135,25 +148,24 @@
 	  )
     
     ))
-(define (para-set-comment image comment)
-  ;;(message-string "para-set-comment" image comment)
-  (gimp-image-attach-parasite image (list "gimp-comment" 1 comment)))
 
+(define msg-file-save #f)
 ;;; This may even work for basename.xcf
 (define (file-merge-and-save image . cardname)
   ;; filename set by open-all OR by card-set-title (deck-builder)
   ;; expect card.png to be in CARD-DIR
   ;; template.xcf in TEMPLATE-DIR (and template.png in PUB-DIR)
-  (let* ((filename (car (gimp-image-get-filename image))) ; as was loaded (pro'ly CARD-DIR)
-	 (toplayer (car (gimp-image-merge-visible-layers image CLIP-TO-IMAGE)))
+  (let* ((toplayer (car (gimp-image-merge-visible-layers image CLIP-TO-IMAGE)))
+	 (filename (car (gimp-image-get-filename image))) ; as was loaded (pro'ly CARD-DIR)
 	 (basename (util-file-basename filename)))
-    ;;(message-string "file-merge-and-save0" cardname basename filename)
+    (and msg-file-save (message-string "file-merge-and-save0" toplayer filename cardname basename))
     (set! cardname (if (pair? cardname) (car cardname) basename))
-    ;;(message-string "file-merge-and-save1" cardname basename filename)
-    (para-set-comment image cardname)
-    ;;(message-string "file-merge-and-save2" cardname filename toplayer)
+    (and msg-file-save (message-string "file-merge-and-save1" toplayer filename cardname))
     (gimp-file-save RUN-NONINTERACTIVE image toplayer filename cardname)
-    ;;(message-string "file-merge-and-save3" cardname filename toplayer)
+    (and msg-file-save (message-string "file-merge-and-save2" toplayer filename cardname))
+    (gimp-image-clean-all image)	; try tell GIMP to not bark about un-saved image!
+    (and msg-file-save (message-string "file-merge-and-save3" toplayer filename cardname))
+    (para-set-comment image cardname)
     ))
   
 
@@ -303,3 +315,6 @@
 (script-fu-menu-register "templates-update-image" "<Image>/Script-Fu")
 
 (gimp-message "loaded script-fu-para-cards")
+;;; Local Variables:
+;;; eval: (save-backup "~/Data/Programs/ng/citymap/src/app/cardinfo/script-fu-para-cards.scm")
+;;; End:

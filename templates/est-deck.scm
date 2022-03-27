@@ -1,5 +1,6 @@
 ;; load utils.scm if not already loaded:
 (require "lib/utils" util-opt-arg)			   ; so macros are defined
+(require "templates/script-fu-para-cards" def-para-set)	   ; load in the proper order...
 (require "templates/script-fu-card-template" ENTRY-POINTS) ; load in the proper order...
 
 ;; Angular-11 (> 8) ng serve does not build assets across symlink. (Jan 2021)
@@ -25,40 +26,34 @@
 (define DO-GIMP #t) ; #t: do GIMP image generation, #f: Just write cardinfo files (set by sf-make-deck/info)
 (define CARD-SCALE .5)		     ; scale when write PNG [template always uses full-scale image]
 
-;;; Card-images are always (750x525) 
-
-(template-use "citymap" MY-MINI-18-SPEC)  ; use card-size for MY-MINI-18-SPEC (trimmed: no bleed)
 (define DO-INFO #t)		     ; #t: write info to typescript class file
 (define DO-TEMPLATE #f)		     ; #t: card-put-image on template-image VS card-write-info
 (define CARD-DISPLAY? #t)	     ; #t: card-put-image also force DISPLAY for each card-image
 (define CARD-SAVE-PNG #t)	     ; #t: if DO-GIMP write .PNG; #f: TEST/TEMPLATE: no CARD.PNG
-(define CARD-SIZE TEMPLATE-CARD-SIZE)	; nominal: (750 525) no bleed
+(define CARD-SIZE `(750 525))	     ; nominal: (750 525) no bleed
+(define CARD-EDGE 25)		     ; safe-edge
+(define CARD-RADIUS 37)		     ; in GUI: 15% of 525/2 ~34 px; 37.5 = 1/8"
 
-(define (no-bleed-template bleed template)
-  (let* ((file (car template))
-	 (size (cadr template))
-	 (offset (cddr template))
-	 (w (nth 0 size))
-	 (h (nth 1 size))
-	 (x (nth 0 offset))
-	 (y (nth 1 offset))
-	 (sizeb (list (- w bleed bleed) (- h bleed bleed)))
-	 (offsb `(,(+ bleed x) ,(+ bleed y) ,@(cddr offset)))
-	 )
-    `(,file ,sizeb ,@offsb)))
 
-(define PPG-MINI-36-BLEED (no-bleed-template 25 PPG-MINI-36-SPEC))
-(template-use "Estates" PPG-MINI-36-BLEED) ; (750 525) with room to bleed
+(define (est-setup project template do-info do-template card-display save-png)
+  (template-use project template)
+  (set! DO-INFO do-info)
+  (set! DO-TEMPLATE do-template)
+  (set! CARD-DISPLAY? card-display)
+  (set! CARD-SAVE-PNG save-png)
+  (set! CARD-SIZE TEMPLATE-CARD-SIZE)
+  (set! CARD-EDGE TEMPLATE-EDGE)
+  (set! CARD-RADIUS TEMPLATE-RADI)
+  (message-string "PROJECT:" project (car template))
+  )
 
-;;(template-use "Estates" PPG-MINI-36-SPEC) ; (800 575) includes bleed space
-(define DO-INFO #f)		     ; #t: write info to typescript class file
-(define DO-TEMPLATE #t)		     ; #t: card-put-image on template-image VS card-write-info
-(define CARD-DISPLAY? #f)	     ; #t: card-put-image also force DISPLAY for each card-image
-(define CARD-SAVE-PNG #f)	     ; #t: if DO-GIMP write .PNG; #f: TEST/TEMPLATE: no CARD.PNG
-(define CARD-SIZE TEMPLATE-CARD-SIZE)
-
+(define (do-citymap) (est-setup "citymap"  MY-MINI-18-SPEC  #t #f #t #t))
+(define (do-estates) (est-setup "Estates"  PPG-MINI-36-SPEC #f #t #f #f))
+(do-estates)
+ 
 (define CARD-LOOP #t)		   ; #f to stop generation loops [tends to kill script-fu/GIMP]
 (define CIRCLE-IMAGE-SIZE 250)     ; [for Debt & House Tokens]
+(define SQUARE-IMAGE-SIZE 115)	   ; for marker Tokens
 
 
 ;; GIMP uses these (R G B) for color:
@@ -75,6 +70,8 @@
 (define BLUE1  '( 36 36 255))		; dark
 (define BLUE   '(162 162 255))		; lighter, purpler
 (define PURPLE '(232 115 255))
+(define GREEN2 `(4 201 0))		; GREEN for HouseTokens
+(define VC_COLOR BLACK)
 
 (define TRANSIT-COLOR  '(180 180 180))
 (define COM-TRANSIT-COLOR  '(180 120  80)) ; someday do BROWN/GREY stripes!
@@ -83,11 +80,9 @@
 (define LEFTJ  TEXT-JUSTIFY-LEFT)
 (define RIGHTJ TEXT-JUSTIFY-RIGHT)
 (define TIMESNR "Times New Roman,")
-(define ROUNDED ".SF Compact Rounded Medium")
+(define ROUNDED ".SF Compact Rounded weight=557")
 (define TEXTFONT ROUNDED)		; use TIMENR or ROUNDED for all non-numeric Text
 
-(define CARD-RADIUS 37)			; in GUI: 15% of 525/2 ~34 px; 37.5 = 1/8"
-(define CARD-EDGE 25)			; safe-edge
 (define CARD-TOP-BAND 115)		; Band at top for title [25 25 40 25] [safe,asc,font,desc]
 (define CARD-COIN-BAND 98)		; Band near top for: Step, Stop, Rent
 (define CARD-BOTTOM-BAND 120)		; Band at bottom for type, cost, VP
@@ -100,11 +95,11 @@
 (define CARD-TYPE-FONT TEXTFONT)
 (define CARD-TYPE-SIZE 40)
 ;; using 82% of diameter as size (~72 for main coins)
-(define CARD-COIN-FONT ".SF Compact Rounded Medium")
+(define CARD-COIN-FONT ".SF Compact Rounded weight=557") ; Medium
 (define CARD-COIN-SIZE 90)		; for Cost, Step, Stop, Rent
-(define CARD-VP-FONT ".SF Compact Rounded Bold")
+(define CARD-VP-FONT ".SF Compact Rounded weight=659") ; weight=659, weight=805 ?
 (define CARD-VP-SIZE 70)
-(define DIR-TYPE-FONT ".SF Compact Rounded Bold")
+(define DIR-TYPE-FONT ".SF Compact Rounded weight=659")
 
 (define context #t)
 
@@ -138,9 +133,9 @@
     (gimp-drawable-edit-fill layer FILL-TRANSPARENT)
     ;; CAN FORCE DISPLAY
     (when card-force-display
-	  (display (card-put-image image 0 #t #f))
-	  (let ((display (para-get-display image)))
-	    (message-string "card-make-base-image:" `(image ,image layer ,layer display ,display))))
+      (card-put-image image 0 #t #f)
+      (let ((display (para-get-display image)))
+	(message-string "card-make-base-image:" `(image ,image layer ,layer display ,display))))
     ;; WHILE TESTING
     (list image layer)
     ))
@@ -160,9 +155,9 @@
     `(if (symbol? ,val) (set! ,val (eval ,val)))))
 
 (define (card-make-image-background image ty by color)
-  ;; fill band of color at top and bottom of image background layer
+  ;; fill band of color at top and bottom of image base-layer
+  ;; TODO: gimp-context-push ... gimp-context-pop
   (gimp-context-set-foreground (eval-sym color))
-
   (let* ((xw (card-width image))
 	 (yh (card-height image))
 	 (layer (card-base-layer image)))
@@ -273,21 +268,22 @@
 
 (define (card-tweak-text-layer tl tweaks)
   ;; apply tweaks to text-layer: tweaks (list (key value) ...)
-  (carloop tweaks (lambda (tweak)
-	 (let* ((key (car tweak))
-		(value (eval-sym (cadr tweak))))
-	   (case key
-	     ((kerning) (gimp-text-layer-set-kerning tl value))
-	     ((letter-spacing) (gimp-text-layer-set-letter-spacing tl value))
-	     ((line-spacing) (gimp-text-layer-set-line-spacing tl value))
-	     ((color) (gimp-text-layer-set-color tl value))
-	     ((indent) (gimp-text-layer-set-indent tl value))
-	     ((font) )			;nothing to do at this point
-	     ((bold) )			;nothing to do at this point
-	     ((size) )			;nothing to do at this point
-	     ((lineno))			;nothing to do
-	     (else (message-string1 "Unknown Tweak:" key value))
-	     ))))
+  (carloop tweaks
+    (lambda (tweak)
+      (let* ((key (car tweak))
+	     (value (eval-sym (cadr tweak))))
+	(case key
+	  ((kerning) (gimp-text-layer-set-kerning tl value))
+	  ((letter-spacing) (gimp-text-layer-set-letter-spacing tl value))
+	  ((line-spacing) (gimp-text-layer-set-line-spacing tl value))
+	  ((color) (gimp-text-layer-set-color tl value))
+	  ((indent) (gimp-text-layer-set-indent tl value))
+	  ((font) )			;nothing to do at this point
+	  ((bold) )			;nothing to do at this point
+	  ((size) )			;nothing to do at this point
+	  ((lineno))			;nothing to do
+	  (else (message-string1 "Unknown Tweak:" key value))
+	  ))))
   tl)
 
 (define (card-make-text-coin image text x y justify size fontname color tweaks)
@@ -378,8 +374,8 @@
 (define (card-get-effective-text text . tweaks)
   ;; separate text from tweaks
   (when (pair? text)
-	(set! tweaks (cdr text))
-	(set! text (car text)))
+    (set! tweaks (cdr text))
+    (set! text (car text)))
   (list text tweaks))
 
 (define (card-text-layer-simple image text nx ny justify size fontname color tweaks)
@@ -406,49 +402,56 @@
   ;; to put arbitrary text/tweaks [vs card-set-text using standard location/size/font]
   (card-make-text-layer image text x y justify size fontname color tweaks))
 
+;;; return text-layer if it made one; else #f
 (define (card-make-text-layer image text x y justify size fontname color tweaks)
   ;;(message-string1 "card-make-text-layer" image (stringify text) x y justify size fontname color tweaks)
   ;; color FOREGROUND ?
   ;; size in PIXELS
   ;; if center? align center of text with X
   (cond
-   ((null? text))			;do nothing
+   ((null? text) #f)			; do nothing
    ((or (string? text) (pair? text))
-    (set!-eval-sym fontname)    	; unquotify as necessary
+    (set!-eval-sym fontname)		; unquotify as necessary
     (set!-eval-sym justify)
     (set!-eval-sym color)
     ;; text may be list ("content" . tweaks)
     (when (pair? text)
-	  (set! tweaks (cdr text))
-	  (set! text (car text)))
+      (set! tweaks (cdr text))
+      (set! text (car text)))
     ;; tweak ('font "Override Font Name")
     (when (util-assq 'font tweaks)
-	  (set! fontname (util-assq 'font tweaks)))
+      (set! fontname (util-assq 'font tweaks)))
     ;; tweak ('color "Override text color")
     (when (util-assq 'color tweaks)
-	  (set! color (util-assq 'color tweaks)))
-    ;; tweak ('bold #t)
+      (set! color (util-assq 'color tweaks)))
+    ;; tweak ('bold #t)	 PROBABLY NOT WORKING; could try "weight="...
     (when (util-assq 'bold tweaks)
-	  ;; (message-string1 "Try boldify text:" fontname tweaks)
-	  ;; boldify the font (if not already Bold)
-	  (if (or (string-ends-with fontname " " "Light")
-		  (string-ends-with fontname " " "Medium"))
-	      ;; Have remove (Medium, etc)
-	      (set! fontname (string-trim-end fontname " ")))
-	  (if (not (string-ends-with fontname " " "Bold"))
-	      (if (string-ends-with fontname "," "")
-		  ;; "TNR ," is different:
-		  (set! fontname (string-append fontname "Bold"))
-		  (set! fontname (string-append fontname " Bold")))))
+      ;; (message-string1 "Try boldify text:" fontname tweaks)
+      ;; boldify the font (if not already Bold)
+      (if (or (string-ends-with fontname " " "Light")
+	      (string-ends-with fontname " " "Medium"))
+	  ;; Have remove (Medium, etc)
+	  (set! fontname (string-trim-end fontname " ")))
+      (if (not (string-ends-with fontname " " "Bold"))
+	  (if (string-ends-with fontname "," "")
+	      ;; "TNR ," is different:
+	      (set! fontname (string-append fontname "Bold"))
+	    (set! fontname (string-append fontname " Bold")))))
 
-    (set! x (normalize-x image x))	; 'center -> (card-width image)/2
-    (set! y (normalize-y image y))
-
-    (if (string-index text #\$)
-	(card-make-text-coin    image text x y justify size fontname color tweaks)
-	(card-text-layer-simple image text x y justify size fontname color tweaks)))
-   (else (message-string1 "card-make-text-layer: NOT A STRING" (stringify text)))
-   )
+    (let* ((dx (util-assq 'dx tweaks 0))
+	   (dy (util-assq 'dy tweaks 0))
+	   (yc (equal? y 'center))	; y == 'center to justify=CENTER
+	   (nx (normalize-x image x))
+	   (ny (normalize-y image y))
+	   (x (+ nx dx))
+	   (y (+ ny dy))
+	   (tl (if (string-index text #\$)
+		   (card-make-text-coin	   image text x y justify size fontname color tweaks)
+		 (card-text-layer-simple image text x y justify size fontname color tweaks))))
+      (when yc (gimp-layer-translate tl 0 (-  (/ (car (gimp-drawable-height tl)) 2))))
+      tl
+      ))
+   (else (message-string1 "card-make-text-layer: NOT A STRING" (stringify text)) #f)) ; end of cond
   )
 
 (define (card-make-dot image color size cx cy)
@@ -518,17 +521,18 @@
   ;; text may be list ("content" . tweaks)
   ;;(message-string1 "card-set-text" image (stringify text))
   (let* ((lead (util-assq 'lead args (* 2 6))) ; 2x line "spacing" of 50pixel font
-	 (size CARD-TEXT-SIZE) (font CARD-TEXT-FONT)
+	 (size CARD-TEXT-SIZE)
+	 (font CARD-TEXT-FONT)
 	 (top (+ lead CARD-TOP-BAND (card-price-bar-height image))))
     ;; card-set-text is not given any "tweak" (unless embedded in text)
     (card-make-text-layer image text 'center top CENTER size font BLACK nil)))
-  
+
 (define (card-set-text-low image text . tweaks)
   ;; horizontal bar and text at bottom of card (above BOTTOM-BAND)
   ;;(message-string1 "card-set-text-low" image text tweaks)
   (when (pair? text)
-	(set! tweaks (cdr text))
-	(set! text (car text)))
+    (set! tweaks (cdr text))
+    (set! text (car text)))
   (if (string? text)
       (let* ((size0 CARD-TEXT-SIZE) (font CARD-TEXT-FONT)
 	     ;; shrink font before text-layer-height
@@ -542,7 +546,7 @@
 	(card-set-line image liney BLACK margin thick)
 	(card-make-text-layer image text 'center texty CENTER size font BLACK tweaks)
 	)
-      ))
+    ))
 
 (define (card-set-type image text . tweaks)
   ;;(message-string1 "card-set-type" image text tweaks)
@@ -700,44 +704,44 @@
 	   (layer (car (gimp-file-load-layer RUN-NONINTERACTIVE image filepath)))
 	   (iw (layer-width layer))
 	   (ih (layer-height layer))
-	   (regc (gimp-selection-bounds image)); (list 0 0 (card-width image) (card-height image))
+	   (regc (gimp-selection-bounds image))	; (list 0 0 (card-width image) (card-height image))
 	   (reg0 (card-white-region image #f)) ; with CARD-EDGE margin (scale image into this region)
 	   (reg1 (card-white-region image #t)) ; full image width
 	   )
       (and msg-set-image (message-string "card-set-image2: layer=" layer "reg0:" reg0 "reg1:" reg1 "regc:" regc))
       (when (equal? x 'card)
-	    (set! x (nth 1 regc))	; 0
-	    (set! y (nth 2 regc))	; 0
-	    (set! w (nth 3 regc))	; card-width
-	    (set! h (nth 4 regc)))
+	(set! x (nth 1 regc))		; 0
+	(set! y (nth 2 regc))		; 0
+	(set! w (nth 3 regc))		; card-width
+	(set! h (nth 4 regc)))
       (when (equal? x 'reg)
-	    (set! x (nth 0 reg1))	; 0
-	    (set! y (nth 1 reg1))	; white part
-	    (set! w (- (nth 2 reg1) x))
-	    (set! h (- (nth 3 reg1) y)))
+	(set! x (nth 0 reg1))		; 0
+	(set! y (nth 1 reg1))		; white part
+	(set! w (- (nth 2 reg1) x))
+	(set! h (- (nth 3 reg1) y)))
       (when (equal? x 'fit)
-	    (set! x (nth 0 reg0))	 ; generally: CARD-EDGE
-	    (set! w (- (nth 2 reg0) x))) ; scale width to fit
+	(set! x (nth 0 reg0))		; generally: CARD-EDGE
+	(set! w (- (nth 2 reg0) x)))	; scale width to fit
       (when (equal? y 'fit)
-	    (set! y (nth 1 reg0))	 ; top of white
-	    (set! h (- (nth 3 reg0) y))) ; scale height to fit
-      (when (equal? y 'top)		 ; top 
-	    (set! y (nth 1 reg0)))	 ; of white part
+	(set! y (nth 1 reg0))		; top of white
+	(set! h (- (nth 3 reg0) y)))	; scale height to fit
+      (when (equal? y 'top)		; top 
+	(set! y (nth 1 reg0)))		; of white part
       
       (if msg-set-image (message-string "card-set-image3:" image layer (list x y w h) (list iw ih)))
       
       (gimp-image-insert-layer image layer 0 0)
       (gimp-item-set-name layer filename)
       (when (or (not (null? w)) (not (null? h))) ; re-scale image:
-	    (let* ((w (if (null? w) iw w))
-		   (h (if (null? h) ih (if (equal? h 'xs) (* ih (/ w iw)) h))))
-	      (if msg-set-image (message-string "card-set-image4:" `(gimp-layer-scale ,layer ,w ,h ,TRUE)))
-	      (gimp-layer-scale layer w h TRUE)))
+	(let* ((w (if (null? w) iw w))
+	       (h (if (null? h) ih (if (equal? h 'xs) (* ih (/ w iw)) h))))
+	  (if msg-set-image (message-string "card-set-image4:" `(gimp-layer-scale ,layer ,w ,h ,TRUE)))
+	  (gimp-layer-scale layer w h TRUE)))
       ;; 'center inside reg0: (inside CARD-EDGE and 'white' region) [similar to 'fit]
       (when (equal? x 'center)
-      	    (set! x (card-center (nth 0 reg0) (nth 2 reg0) (layer-width layer)))) ; after scaling layer
+	(set! x (card-center (nth 0 reg0) (nth 2 reg0) (layer-width layer)))) ; after scaling layer
       (when (equal? y 'center)
-      	    (set! y (card-center  (nth 1 reg0)  (nth 3 reg0) (car (gimp-drawable-height layer))))) ; after scaling layer
+	(set! y (card-center  (nth 1 reg0)  (nth 3 reg0) (car (gimp-drawable-height layer))))) ; after scaling layer
       (if (not (null? x)) (set! x (normalize-x image x)))
       (if (not (null? y)) (set! y (normalize-y image y)))
       (if msg-set-image (message-string1 "card-set-image5:" image filename (list x y w h)))
@@ -750,9 +754,10 @@
       layer))
   )
 
+(define msg-set-fill #f)
 (define (card-set-fill image x y color)
   ;; bucket fill from given coords; suitable to apply team color
-  ;;(message-string1 "card-set-fill" image x y color)
+  (and msg-set-fill (message-string1 "card-set-fill" image x y color))
   (gimp-context-set-foreground (eval-sym color))
   ;;(gimp-selection-none image)
   (gimp-edit-bucket-fill (card-base-layer image)
@@ -770,23 +775,23 @@
   ;;(message-string1 "card-set-price-bar" image step stop rent)
   ;; assert card/image is portrait mode:
   (when (not (and (null? step) (null? stop) (null? rent)))
-	(let* ((top (or (util-pop args) CARD-TOP-BAND))
-	       (color (or (util-pop args) '(100 100 100))) ; light grey
-	       (size (or (util-pop args) CARD-COIN-SIZE))
-	       (p? #t)
-	       (x 0) (y top) (w (template-width p?)) (h (+ size 10))
-	       (cc (/ size 2))
-	       (cy (+ y (/ h 2)))
-	       (ce (+ CARD-EDGE 5 cc)))
-	  ;;(card-select-edge-rect image x y w h)
-	  (gimp-image-select-rectangle image CHANNEL-OP-REPLACE x y w h)
-	  (card-set-fill image x y color )
-	  (gimp-selection-none image)
+    (let* ((top (or (util-pop args) CARD-TOP-BAND))
+	   (color (or (util-pop args) '(100 100 100))) ; light grey
+	   (size (or (util-pop args) CARD-COIN-SIZE))
+	   (p? #t)
+	   (x 0) (y top) (w (template-width p?)) (h (+ size 10))
+	   (cc (/ size 2))
+	   (cy (+ y (/ h 2)))
+	   (ce (+ CARD-EDGE 5 cc)))
+      ;;(card-select-edge-rect image x y w h)
+      (gimp-image-select-rectangle image CHANNEL-OP-REPLACE x y w h)
+      (card-set-fill image x y color )
+      (gimp-selection-none image)
 
-	  (if (not (null? step)) (card-make-coin image step (+  ce) cy size))
-	  (if (not (null? stop)) (card-make-coin image stop (/ w 2) cy size))
-	  (if (not (null? rent)) (card-make-coin image rent (-  ce) cy size))
-	  )))
+      (if (not (null? step)) (card-make-coin image step (+  ce) cy size))
+      (if (not (null? stop)) (card-make-coin image stop (/ w 2) cy size))
+      (if (not (null? rent)) (card-make-coin image rent (-  ce) cy size))
+      )))
 
 (define (card-set-big-coin image valu)
   ;; Make big coin for ATM, Bank, etc.
@@ -800,25 +805,26 @@
 (define (card-set-extras image extras)
   ;;(message-string1 "card-set-extras" image extras)
   ;; extras: ( (key1 arg11 arg12) (key2 arg21 arg22) ...)
-  (carloop extras (lambda (extra)
-	 (let* ((key (car extra))
-		(args (cdr extra)))
-	   (if msg-set-extras (message-string1 "card-set-extra:" key args))
-	   (case key
-	     ((text)  (apply card-make-text-layer-and-tweak image args)) ; with tweaks
-	     ((text-low) (apply card-set-text-low image args)) ; with tweaks
-	     ((line)  (apply card-set-line image args))
-	     ((image) (apply card-set-image image args))
-	     ((coin)  (apply card-set-big-coin image args))
-	     ((fill)  (apply card-set-fill image args))
-	     ((step)  (apply card-set-step image args))
-	     ((vp)    (apply card-set-vp image args))
-	     ((ext)   (apply card-set-ext image args))
-	     ((subtype) (apply card-set-type image (car args) '(lineno 1) (cdr args))) ; on second line
-	     ((cardProps))		; nothing at this time
-	     ((filen))			; nothing at this time
-	     (else (message-string1 "Unknown Extra:" key args))
-	     )))))
+  (carloop extras
+	   (lambda (extra)
+	     (let* ((key (car extra))
+		    (args (cdr extra)))
+	       (if msg-set-extras (message-string1 "card-set-extra:" key args))
+	       (case key
+		 ((text)  (apply card-make-text-layer-and-tweak image args)) ; with tweaks
+		 ((text-low) (apply card-set-text-low image args))	     ; with tweaks
+		 ((line)  (apply card-set-line image args))
+		 ((image) (apply card-set-image image args))
+		 ((coin)  (apply card-set-big-coin image args))
+		 ((fill)  (apply card-set-fill image args))
+		 ((step)  (apply card-set-step image args))
+		 ((vp)    (apply card-set-vp image args))
+		 ((ext)   (apply card-set-ext image args))
+		 ((subtype) (apply card-set-type image (car args) '(lineno 1) (cdr args))) ; on second line
+		 ((cardProps))		; nothing at this time
+		 ((filen))		; nothing at this time
+		 (else (message-string1 "Unknown Extra:" key args))
+		 )))))
 
 (define (card-set-page-name name . rest)
   ;; use name for future page(s), maybe force to new page
@@ -1166,9 +1172,9 @@
      )))
 
 
-(define (card-generic portrait type title color cost text . tweak)
+(define (card-generic portrait type title color cost text . tweaks)
   ;;(message-string1 "card-generic" portrait type color title cost text)
-  (let* ((filen (util-assq 'filen tweak title))
+  (let* ((filen (util-assq 'filen tweaks title))
 	 (image-layer (card-make-base portrait color CARD-TOP-BAND CARD-BOTTOM-BAND))
 	 (image (car image-layer))
 	 (layer (cadr image-layer)))
@@ -1245,8 +1251,8 @@
 	 (filen (string-append "Home-" colos)))
     (ifgimp
      (let* ((image-layer (card-generic #t type title color cost () `(filen ,filen)))
-	   (image (car image-layer))
-	   (layer (cadr image-layer)))
+	    (image (car image-layer))
+	    (layer (cadr image-layer)))
        (card-set-price-bar image step stop rent)
        (card-set-fill image 60 260 bgcolor)
        (card-set-image image "Home.png" 86 238 360 371) ; filename x y new-width new-height
@@ -1263,25 +1269,36 @@
 (define (card-type-circle nreps title type color cost step stop rent text . extras)
   ;; note that args are TITLE(name) *then* TYPE(types) 
   (if msg-type-circle (message-string1 "card-type-circle:" type title color cost step stop rent text extras)) 
-  ;; use cost to print the cost?
-  (let* ((filen (util-assq 'filen extras title))
-	 (colos (symbol->string color))	; assert bgcolor is SYMBOL: 'RED -> "RED"
+  ;; use cost to print the cost? [vs (image "House0.png")]
+  (let* ((colos (symbol->string color))	; assert bgcolor is SYMBOL: 'RED -> "RED"
+	 (filen (util-assq 'filen extras title))
 	 ;; convert GIMP color to CSS color in stringify
-	 (size CIRCLE-IMAGE-SIZE)	     ; 125/scale -> 250?
-	 (radius (/ size 2))		     ; "rounded rectangle" is a circle
+	 (size CIRCLE-IMAGE-SIZE)	;
+	 (radius (/ size 2))		; "rounded rectangle" is a circle
 	 (subtype (util-assq 'subtype extras nil))
-	 (vp (util-assq 'vp extras nil)))
-    (if msg-type-circle (message-string1 "card-type-circle: PRE-GIMP" filen type title))
+	 (font CARD-VP-FONT)		; bold
+	 (costs (if (number? cost) (number->string cost) #f))
+	 (costColor BLACK)		;
+	 (vp (util-assq 'vp extras nil))
+	 )
+    (if msg-type-circle (message-string1 "card-type-circle: PRE-GIMP" filen type title size cost vp))
     (ifgimp
-     (let* ((image-layer (card-make-base-image size size radius )) ; 62.5 x 62.5 in final bitmap
+     (let* ((image-layer (card-make-base-image size size radius )) ; 62.5 x 62.5 in citymap PNG
 	    (image (car image-layer))
 	    (layer (cadr image-layer)))
        (if msg-type-circle (message-string1 "card-type-circle: GIMP" 'image-layer= image-layer filen type title))
        (gimp-image-set-filename image (card-filename-from-title filen))
        (gimp-selection-none image)
-       (card-set-fill image radius radius color)
-       (card-set-extras image extras)	; (card-set-image image "House0")
-       (gimp-image-scale image 125 125)
+       (card-set-fill image radius radius color) ; fill circle with color [GREEN or DEBT]
+       ;; (define (card-make-text-layer image text x y justify size fontname color tweaks)
+       (if msg-type-circle (message-string1 "card-type-circle: extras0" extras))
+       (if costs
+	   (card-make-text-layer image costs 'center 'center CENTER (* .68 size) font costColor `((dy -10)))
+	   (set! cost 1))			 ; historically DEBT has cost: 1
+       (set! extras (remprop 'image extras nil)) ; block old image
+       (if msg-type-circle (message-string1 "card-type-circle: extrasX" extras))
+       (card-set-extras image extras)	; add image & VP
+       (gimp-image-scale image (* .5 (card-width image)) (* .5 (card-height image))) ; 125 125
        image-layer)
      (if msg-type-circle (message-string1 "card-type-circle:" 'image-layer= image-layer filen type title))
      (let ((name filen) (props `((noStop #t))))
@@ -1289,10 +1306,47 @@
      )
     ))
 
+(define (card-type-square nreps title type color cost step stop rent text . extras)
+  ;; note that args are TITLE(name) *then* TYPE(types) 
+  (if msg-type-circle (message-string1 "card-type-square:" type title color cost step stop rent text extras)) 
+  ;; 525: 450 usable/square; 4*115 = 460 (~3/8) [card-top-band=115]  750: 675 / 125 = 5 ; 4x6 = [500 x 750]
+  ;; type: VcOwned or NoRent
+
+  ;; use cost to print the cost?
+  (let* ((colos (symbol->string color)) ; assert color is SYMBOL: 'RED -> "RED"
+	 (filen (util-assq 'filen extras (string-append title "-" colos)))
+	 (size SQUARE-IMAGE-SIZE)	;
+	 (radius 1)			; 0-radius: square
+	 )
+    (if msg-type-circle (message-string1 "card-type-square: PRE-GIMP" filen type title color))
+    (ifgimp
+     (let* ((image-layer (card-make-base-image size size radius ))
+	    (image (car image-layer))
+	    (layer (cadr image-layer)))
+       (if msg-type-circle (message-string1 "card-type-square: GIMP" 'image-layer= image-layer filen type title color))
+       (gimp-image-set-filename image (card-filename-from-title filen))
+       (gimp-selection-all image)		      ; size X size
+       (card-set-fill image 'center 'center VC_COLOR) ; fill square with BLACK (VC color)
+       (cond ((equal? title "VcOwned")
+	      (gimp-selection-shrink image (/ size 3))
+	      (card-set-fill image 'center 'center color) ; fill circle with color [GREEN or DEBT]
+	      )
+	     ((equal? title "NoRent")
+	      (util-draw-path layer `((color ,color) (width 10)) 0 0 size size)
+	      (util-draw-path layer `((color ,color) (width 10)) 0 size size 0)
+	      ))
+       (gimp-image-scale image (* .5 (card-width image)) (* .5 (card-height image))) ; 125 125
+       image-layer)
+     (if msg-type-circle (message-string1 "card-type-square:" 'image-layer= image-layer filen type title color))
+     (let ((name filen) (props `((noStop #t))))
+       (card-write-info filen (syms-to-alist nreps type name cost step stop rent)))
+     )
+    ))
+
 (define (card-get-nreps image)
   ;; used by sf-to-template-nreps
   (catch (lambda(err) 1)		; don't print "gimp-image-get-parasite failed"
-	 (string->number (nth 2 (car (gimp-image-get-parasite image "nreps"))))))
+    (string->number (nth 2 (car (gimp-image-get-parasite image "nreps"))))))
 
 (define (card-set-nreps image nreps)
   ;; record nreps for future... (sf-to-template-nreps
@@ -1301,15 +1355,21 @@
 (define (card-do-template-nreps image nreps undo context)
   ;; put nreps copies of card image onto template (also: sf-to-template-nreps)
   (catch
-   (begin (message-string "card-do-template-nreps catch" CARD-LOOP "nreps" nreps) #t)
-   (while (and (> nreps 0) CARD-LOOP)
-	  ;; use script-fu-card-template.scm
-	  (card-to-template image (card-base-layer image) undo context) ; and save-if-template-full
-	  (set! nreps (- nreps 1)))))  
+    (begin (message-string "card-do-template-nreps catch" CARD-LOOP "nreps" nreps) #t)
+    (while (and (> nreps 0) CARD-LOOP)
+      (card-to-template image (card-base-layer image) undo context) ; and save-if-template-full
+      (set! nreps (- nreps 1)))))  
+
+(def-para-set para-set-alt-template "alt-template")
+(def-para-get para-get-alt-template "alt-template")
+
+(define (card-to-template image layer undo context)
+  ;; use script-fu-card-template.scm
+  (image-to-template image layer undo context))
 
 (define (displayed? image)
   ;; #t if image has parasite "card-display"
-  (pair? (catch nil (gimp-image-get-parasite image "card-display"))))
+ (para-get-display image))
 
 (define (card-put-image image nreps display? template?)
   ;; either display this card, OR push to template (nreps times)
@@ -1328,7 +1388,7 @@
   (message-string1 "original card-aux-proc: " AUX-PROC)
   (if AUX-PROC
       (begin
-	(template-use (nth 0 AUX-SPEC) (nth 1 AUX-SPEC)) ; try again here...
+	(use-template (nth 0 AUX-SPEC) (nth 1 AUX-SPEC)) ; try again here...
 	(message-string1 "card-aux-proc1: " (stringify (template-get-spec)))
 	(apply AUX-PROC text args)
 	)
@@ -1371,6 +1431,7 @@
               ;; tiles:
               ((home)       (apply card-type-home nreps types name BROWN args))
               ((circle)     (apply card-type-circle nreps name args)) ; name types COLOR args [not types="circle"]
+              ((square)     (apply card-type-square nreps name args)) ; name types COLOR args [not types="circle"]
               ((res)        (apply card-type-tile nreps types name GREEN args))
               ((com)        (apply card-type-tile nreps types name BROWN args))
               ((fin)        (apply card-type-tile nreps types name BROWN args))
@@ -1409,10 +1470,11 @@
 	    (and msg-make-one (message-string1 "try card-put-image" image nreps CARD-DISPLAY? DO-TEMPLATE))
 	    ;; put full scale image to display and/or template 
 	    (card-put-image image nreps CARD-DISPLAY? DO-TEMPLATE) ; maybe show card-image on DISPLAY & DO-TEMPLATE
-            (let ((filename (car (gimp-image-get-filename image))))
+            (let ((filename (car (gimp-image-get-filename image)))
+		  (has-been-saved (lambda(image) (para-get-comment image))))
               (and msg-make-one (message-string1 "try merge-and-save" filename))
               (when (and (string? filename) (> (string-length filename) 0) CARD-SAVE-PNG)
-		    (when (equal? (card-width image) (car CARD-SIZE)) ; indicates unscaled
+		    (when (not (has-been-saved image)) ; indicates image still UNSCALED
 			  (let ((w (card-scale (card-width image)))
 				(h (card-scale (card-height image))))
 			    (and msg-make-one (message-string1 "try scale image" w h))
@@ -1675,7 +1737,7 @@
     (18 back "Tile Back" GREY #t 60 60 "" (image "CitymapBack.png" card)) ; cityback
     (18 back "Event Back" GREY #f 60 60 "" (image "CitymapBackL.png" card)) ; cityback
     ))
-(define EVENT-BACK
+(define EVENT-BACK			; for testing
   #((0 deck "EventBack")
     (0 page "EventBack")
     (36 back "Event Back" GREY #f 60 60 "" (image "CitymapBackL.png" card)) ; cityback
@@ -1698,14 +1760,20 @@
    #((0 deck "TokenDeck" "token-deck")	; name of "Class" and "file" in TS
      ;; n   type title cost ep stop rent text1 line text2 image
      ;;    type   name         types  color cost... vp text
-     (-32 circle "Debt"       "Debt"  DEBT   1 () () 0 () ) ;(image "Debt.png"))
+     (-32 circle "Debt"       "Debt"  DEBT   () () () 0 () ) ;(image "Debt.png"))
 
-     (-12 circle "House"      "house" GREEN  2 () () 0.5 () (vp 1) (image "House0.png"))
-     (-12 circle "Triplex"    "house" GREEN  5 () () 1 () (vp  3) (image "House1.png"))
-     (-12 circle "Apartments" "house" GREEN  8 () () 2 () (vp  6) (image "House2.png"))
-     (-12 circle "High Rise"  "house" GREEN 11 () () 4 () (vp 10) (image "House3.png"))
-     (-12 circle "Tower"      "house" GREEN 14 () () 8 () (vp 15) (image "House4.png"))
-     (mini-vec0 0 BACK-DECK "City-Back")
+     (-12 circle "House"      "house" GREEN2  2 () () 0.5 () (vp 1))
+     (-12 circle "Triplex"    "house" GREEN2  5 () () 1 () (vp  3))
+     (-12 circle "Apartments" "house" GREEN2  8 () () 2 () (vp  6))
+     (-12 circle "High Rise"  "house" GREEN2 11 () () 4 () (vp 10))
+     (-12 circle "Tower"      "house" GREEN2 14 () () 8 () (vp 15))
+
+     (-12 square "VcOwned"    "marker" RED   1 () () 0 ())
+     (-12 square "VcOwned"    "marker" BLUE  1 () () 0 ())
+     (-12 square "VcOwned"    "marker" GREEN 1 () () 0 ())
+     (-12 square "NoRent"     "marker" RED   1 () () 0 ())
+     (-12 square "NoRent"     "marker" BLUE  1 () () 0 ())
+     (-12 square "NoRent"     "marker" GREEN 1 () () 0 ())
      )))
 
 (define HOME-DECK			; type-home
@@ -1714,24 +1782,55 @@
      (0 page "Homes")
 
      (1 home "Home"    0  1 0 1 RED)
-     (3 own "RED" RED 0)
-
      (1 home "Home"    0  1 0 1 BLUE)
-     (3 own "BLUE" BLUE 0)
-
      (1 home "Home"    0  1 0 1 GREEN)
-     (3 own "GREEN" GREEN 0)
+     (1 own  "WHITE"   WHITE 0)		; no DOTS
 
-     (4 own "BLACK" BLACK 0) 		; VC-Tokens & no_Rent
+     (0 own "RED" RED 0)		; cardinfo only
+     (0 own "BLUE" BLUE 0)
+     (0 own "GREEN" GREEN 0)
+     ;;(4 own "BLACK" BLACK 0) 		; VC-Tokens & no_Rent
+     )))
+(define HOME
+  #((0 deck "HomeDeck")
+    (1  home "Home"    0  1 0 1 RED)
+    (1  home "Home"    0  1 0 1 ORANGE)
+    (1  home "Home"    0  1 0 1 YELLOW)
+    (1  home "Home"    0  1 0 1 GREEN)
+    (1  home "Home"    0  1 0 1 BLUE)
+    (1  home "Home"    0  1 0 1 PURPLE)
+    ))
 
-     ;;(0 page "HomeBack" #t)		; page-eject, make back on clean sheet:
-     ;;(1 own "BLUE" BLUE 0)
-     ;;(1 own "RED" RED 0)
 
-     ;;(0 page "Owners" )	    ; Note: Owners is its own back....
+(define HOME-DECK2			; type-home
+  (expandify
+   #((0 deck "HomeDeck" "home-deck")	; name of "Class" and "file" in TS
+     (0 page "Homes")
+
+     (1 home "Home"    0  1 0 1 RED)
+     (1 home "Home"    0  1 0 1 BLUE)
+     (1 home "Home"    0  1 0 1 GREEN)
+     (1 own "BLANK" WHITE 0)		; Blank white card...
+
+     ;; actual owner cards for citymap (solid color); 12 OwnerTokens for Estates
+     (1 own "RED" RED 0)		
+     (1 own "BLUE" BLUE 0)
+     (1 own "GREEN" GREEN 0)
+     (1 own "BLACK" BLACK 0) 		
+
+     ;; VC-Debt (& No-Rent on back) markers [12 each]
+     (1 own "RED" RED 0)
+     (1 own "BLUE" BLUE 0)
+     (1 own "GREEN" GREEN 0)
+     (1 own "BLACK" BLACK 0) 		
+
+     (1 own "RED" RED 0)
+     (1 own "BLUE" BLUE 0)
+     (1 own "GREEN" GREEN 0)
+     (1 own "BLACK" BLACK 0) 		
+
      ;; Pro'ly want to put solid color on both sides to make owner Tokens
 
-     (mini-vec0 0 BACK-DECK "City-Back")
      )))
 
 
@@ -2007,8 +2106,6 @@
     ;; if gov building falls off the end of auction, next player *must* Place it at start of turn.
     ;; ... so if you push it off, other player must to Place it for no cost; (but consumes a Build action? no...)
     ;; other player does not *own* it; must pay Cost+Rent to acquire
-    ;; (0 page "TileBack" #t) 		; page-eject, make back on clean sheet:
-    (mini-vec0 0 BACK-DECK "Tile Back")
     )))
 
 
@@ -2463,20 +2560,17 @@
        (cardProps
         (event (withPlayer #t) (tornado (range 3) (count 3)))
         ))
-    ;;
-    ;; (0 page "EventBack" #t)             ; page-eject, make back on clean sheet:
-    (mini-vec0 0 BACK-DECK "Event Back")
     )))
 
 (define JAIL-DECK 
+  (expandify
   #((0 deck "JailDeck" "jail-deck")
     (goJail 2 "Busted" "" "" 'this_player)
     (goJail 1 "Accounting Fraud" "Player with most Cash on Hand\n" "-cash" 'high_total_cash)
     (goJail 1 "Investment Fraud" "Player with highest Property Cost\n" "-property" 'high_total_cost)
     (goJail 1 "Price Gouging" "Player with highest Rent\n" "-rent" 'high_total_rent)
     (goJail 1 "Construction Fraud" "Player with most Roads\n" "-roads" 'high_total_roads)
-    ))
-(expandify JAIL-DECK)
+    )))
 
 (define (temp-policy name text step opers)
   (let ((ext (if (equal? name "Road Repair") "Dir" "Policy")))
@@ -2513,15 +2607,6 @@
 
   #((0 deck "PolicyDeck" "policy-deck")       ; name of object in js/ts
     (0 page "Policy")
-
-    ;;     (0 page "PolicyBack" #t)                     ; page-eject, make back on clean sheet:
-    ;;     (18 back "Policy Back" GREY #f 260 260 "Policy")
-    ;;     ))
-    ;; (expandify POLICY-DECK)
-
-    ;; (define POLICY-DECK0
-    ;;   #((0 deck "PolicyDeck" "policy-deck")        ; name of object in js/ts
-    ;;     (0 page "Policy")
     ;; n type title text [cost] [below-line-text]
     (2 policy "Increase Distance" YELLOW   "+1 Distance on each Move" 3 ()
        (step 2)
@@ -2681,8 +2766,6 @@
                  2 '((onMove (blockedDirAdjust (include #( "E" "W" ))))))
     (temp-policy "Road Repair" "NS movement is blocked"
                  2 '((onMove (blockedDirAdjust (include #( "N" "S" ))))))
-
-    ;; Use "Event Back"
     )))
 
 (define TEMP-DECK
@@ -2876,8 +2959,6 @@
     (high-tech "High Tech" "Online Shopping") ; Amazon
     (high-tech "High Tech" "Streaming Video") ; Netflix
     (high-tech "High Tech" "Internet Ads")    ; Google
-    ;;(0 page "TileBack" #t) 		; page-eject, make back on clean sheet:
-    ;;(10 back "Tile Back" GREY #t 260 260 "Tile")
     )))
 
 (define TEST-DECK
@@ -2938,14 +3019,6 @@
 (define OWN  (mini-vec 0 DOTS-DECK "RED" "BLUE"))
 (define FLUSH #((1 mov "PURPLE-0" PURPLE 0) (0 page "FLUSH" #t)))
 
-(define HOME
-  #((1  home "Home"    0  1 0 1 RED)
-    (1  home "Home"    0  1 0 1 ORANGE)
-    (1  home "Home"    0  1 0 1 YELLOW)
-    (1  home "Home"    0  1 0 1 GREEN)
-    (1  home "Home"    0  1 0 1 BLUE)
-    (1  home "Home"    0  1 0 1 PURPLE)
-    ))
 (define HOUSING (mini-vec 0 HOME-DECK "Housing"))
 (define HOUSE (mini-vec 1 HOME-DECK "House"))
 (define TOWER (mini-vec 1 HOME-DECK "Tower")) ; HOME-DECK:Tower
@@ -2964,7 +3037,7 @@
 	  (when (pair? AUX-SPEC)
 		(set! AUX (nth 3 AUX-SPEC))
 		(set! AUX-PROC (nth 2 AUX-SPEC))
-		(template-use (nth 0 AUX-SPEC) (nth 1 AUX-SPEC)) ; not clear if this succeeds...
+		(use-template (nth 0 AUX-SPEC) (nth 1 AUX-SPEC)) ; not clear if this succeeds...
 		))))
   
 
@@ -3039,11 +3112,11 @@
 ;;; C-M-a (display; C-M-d not available)
 (define (sf-card-set-display-on)
   (message-string1 "set to display card.")
-  (set! CARD-DISPLAY? #t))
+  (set! card-force-display #t))
 ;;; C-M-p (print)
 (define (sf-card-set-display-off)
   (message-string1 "set to print & publish pages.")
-  (set! CARD-DISPLAY? #f))
+  (set! card-force-display #f))
 
 ;;; C-M-i (info file)
 (define (sf-make-info deck-str)
@@ -3073,7 +3146,6 @@
   ;;(message-string1 "N to template: " nreps)
   (card-do-template-nreps image (card-get-nreps image) #t #t))
 
-
 ;;; C-M-l ??
 (define (sf-load-proj proj-name)
   ;; "proj/name" -> ("proj" "name")
@@ -3082,6 +3154,11 @@
     (set! AUX-PROJ-NAME (util-load-path (car names) (cadr names)))))
 
 (sf-reg "sf-load-proj" "z-load-proj" "load aux scm file" "" SF-STRING "proj/file" "KateAddr/kate-addr")
+
+;; (define (sf-citymap) (do-citymap))
+;; (define (sf-estates) (do-estates))
+(sf-reg "do-citymap" "a-Citymap" "make citymap" "")
+(sf-reg "do-estates" "a-Estates" "make Estates" "")
 
 (sf-reg "sf-make-info" "w-Info File" "all the cards" "" SF-STRING "Deck to Make" "EVENT-DECK")
 (sf-reg "sf-make-deck" "w-Make Deck" "all the cards" "" SF-STRING "Deck to Make" "TILE-DECK")
@@ -3107,8 +3184,5 @@
 (gimp-message "est-deck loaded")
 
 ;;; Local Variables:
-;;; eval: (make-variable-buffer-local 'backup-file-path)
-;;; eval: (setq backup-file-path "~/Data/Programs/ng/citymap/src/app/cardinfo/est-deck.scm")
-;;; eval: (defun backup-est-deck () (write-region (point-min) (point-max) backup-file-path))
-;;; before-save-hook: backup-est-deck
+;;; eval: (save-backup "~/Data/Programs/ng/citymap/src/app/cardinfo/est-deck.scm")
 ;;; End:

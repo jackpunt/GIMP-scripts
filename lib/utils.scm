@@ -201,4 +201,54 @@
   (script-fu-menu-register func-name "<Image>/File")
   )
 
+(define msg-utils #f)
+(define (util-draw-path drawable args . path)
+  ;; Draw a zig-zag line:
+  ;; (util-draw-path layer `((width 10) (color ,RED)) 10 50 20 80 30 0 40 90 40 10)
+  (let ((save  (util-assq 'save args) #t)
+        (color (util-assq 'color args))   ; else use context value
+        (width (util-assq 'width args))   ; else use context value
+        (miter (util-assq 'miter args))   ; else use context value
+        (join  (util-assq 'join args))    ; else use context value
+        (cap   (util-assq 'cap args))     ; else use context value
+        (stroke (util-assq 'stroke args)) ; else use context value
+        )
+    (and msg-utils (message-string1 "util-draw-path" drawable args path))
+    (and save (gimp-context-push))
+    (and miter (gimp-context-set-line-miter-limit miter)) ; default: 10, default mitre up to 60 pixels
+    (and stroke (gimp-context-set-stroke-method stroke))  ; default STROKE-PAINT-METHOD
+    (and cap (gimp-context-set-line-cap-style cap))       ; CAP-ROUND, CAP-SQUARE
+    (and join (gimp-context-set-line-join-style join))    ; JOIN-MITER, JOIN-ROUND, JOIN-BEVEL
+    (and color (gimp-context-set-foreground (eval-sym color))) ;
+    (and width (gimp-context-set-line-width width))       ; default: 6
+
+    (let ((vec (apply vector path)))
+      (gimp-pencil drawable (vector-length vec) vec))
+    (and save (gimp-context-pop))
+    ))
+
+;; gimp-drawable-edit-stroke-item(drawable item):
+
+;; This procedure strokes the specified item, painting along its outline (e.g. along a path, or
+;; along a channel's boundary), with the active paint method and brush, or using a plain line with
+;; configurable properties.
+
+;; This procedure is affected by the following context setters: 'gimp-context-set-opacity',
+;; 'gimp-context-set-paint-mode', 'gimp-context-set-paint-method',
+;; 'gimp-context-set-stroke-method', 'gimp-context-set-foreground', 'gimp-context-set-brush' and
+;; all brush property settings, 'gimp-context-set-gradient' and all gradient property settings,
+;; 'gimp-context-set-line-width' and all line property settings.
+
+
+;; gimp-drawable-edit-stroke-selection:
+;; This procedure strokes the current selection, painting along the selection boundary with the
+;; active paint method and brush, or using a plain line with configurable properties. The paint is
+;; applied to the specified drawable regardless of the active selection.
+
+;; This procedure is affected by the following context setters: 'gimp-context-set-opacity',
+;; 'gimp-context-set-paint-mode', 'gimp-context-set-paint-method',
+;; 'gimp-context-set-stroke-method', 'gimp-context-set-foreground', 'gimp-context-set-brush' and
+;; all brush property settings, 'gimp-context-set-gradient' and all gradient property settings,
+;; 'gimp-context-set-line-width' and all line property settings.
+
 (gimp-message "utils.scm loaded")
