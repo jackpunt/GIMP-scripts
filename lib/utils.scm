@@ -8,7 +8,7 @@
 			     (binds (if (pair? symf) (cadr symf) sym))
 			     (bind (eval binds)))
 			`(define ,sym ,bind))) (quote ,syms))))
-    `(begin ,@defs))))
+    `(list ,@defs))))
 
 (define (util-load-path0 project name)
   (let* ((base BASE-PATH)

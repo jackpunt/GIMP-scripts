@@ -48,6 +48,7 @@
 	  ((equal? obj #t) (string->buffer "#t"))
 	  ((equal? obj #f) (string->buffer "#f"))
 	  ((closure? obj)  (string->buffer "#<CLOSURE>"))
+	  ((environment? obj) (string->buffer "#<ENVIRONMENT>"))
           (else            (string->buffer "???"))
           )
     )
