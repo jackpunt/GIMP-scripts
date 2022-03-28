@@ -11,6 +11,8 @@
 ;;; pname is location of card: `card-in:I:L:X:Y` --> image-id: number
 ;;; para-set-comment [gimp-comment], para-set-display [card-display], para-set-pubname, para-set-global-pubname
 
+(define msg-para-get-err #f)
+
 (macro (def-para-set form)	 ; (def-para-set para-set-display "card-display" number->string)
   (let* ((para-set (nth 1 form))
 	 (para-name (nth 2 form))
@@ -26,7 +28,7 @@
 	 (msg-str (string-append para-name ":")))
     `(define (,para-get image)
        ;; squelch the message: Procedure execution of gimp-image-get-parasite failed
-       (catcherr (lambda (err) (message-string ,msg-str image err) #f)
+       (catcherr (lambda (err) (and msg-para-get-err (message-string ,msg-str image err) #f))
 	 ,(if (> (length form) 3) `(,(nth 3 form) ,get-form) get-form))
        )))
 
