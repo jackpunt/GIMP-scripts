@@ -6,7 +6,7 @@
 (define MY-POKER-8-SPEC '((file "MyPoker8-0.png") (cardw 1108) (cardh 808)
 			  (xmin 11) (ymin 85) (xinc 1125) (yinc 825)
 			  (ncol 2) (nrow 4) (edge 50) (radi 62)))
-(define PPG-MINI-36-spec '((file "PPGMiniCard36-0.png") (cardw 800) (cardh 575)
+(define PPG-MINI-36-SPEC '((file "PPGMiniCard36-0.png") (cardw 800) (cardh 575)
 			   (xmin 150) (ymin 100) (xinc 833) (yinc 578.25)
 			   (edge 50) (radi 62) (xlim 3600) (ylim 5400)))
 (define MY-MINI-18-SPEC '((file "MyMiniCard18-0.png") (cardw 750) (cardh 525)
@@ -19,39 +19,19 @@
 			   (xmin 50) (ymin 50) (xinc 117) (yinc 117)
 			   (edge 1) (radi 1) (xlim 750) (ylim 525))) 
 
-;;; choose with (template-use 'project-dir' SOME-SPEC)
-;; spec: (file "basename.png") (cardw ) (cardh ) (xmin ) (ymin ) (xinc )(yinc ) (xlim ) (ylim )
-;;  (card-edge )(corner-radius ) [ncards?] (ncol ) (nrow )
-
-(define BASE-DIR "/Users/jpeck/Google Drive/jpeckj/")
-
-;;;; not yet object-ified:
-(define PROJECT-DIR "")
-(define IMAGE-DIR BASE-DIR)
-(define CARD-DIR BASE-DIR)
-(define PUB-DIR  BASE-DIR)
-(define TEMPLATE-DIR BASE-DIR)
-
-(define (set-template-dirs proj)
-  (set! PROJECT-DIR  proj)
-  (set! IMAGE-DIR    (string-append BASE-DIR proj "/images/"))
-  (set! CARD-DIR     (string-append BASE-DIR proj "/cards/"))
-  (set! PUB-DIR      (string-append BASE-DIR proj "/publish/"))
-  (set! TEMPLATE-DIR (string-append BASE-DIR proj "/templates/")))
-
-(define temp #f)
-;;;; Entry-point:
-(define (template-use proj spec)
-  (set-template-dirs proj)
-  (set! temp (Templ spec)))
+(define (Project proj . base)
+  (make-environment
+    (define BASE-DIR (if (pair? base) (car base) "/Users/jpeck/Google Drive/jpeckj/"))
+    (define PROJECT-DIR proj)
+    (define (dirpath . path) (apply string-append BASE-DIR proj path))
+    (define IMAGE-DIR (dirpath "/images/"))
+    (define CARD-DIR (dirpath "/images/"))
+    (define PUB-DIR  (dirpath "/cards/"))
+    (define TEMPLATE-DIR (dirpath "/templates/"))
+  ))
 
 
-;;;; helpers:
-;; size/orientation of a given CARD:
-(define (card-width image)  (car (gimp-image-width image)))
-(define (card-height image) (car (gimp-image-height image)))
-(define (starts-with? str prefix) (string-prefix? prefix str))
-
+;;;; GIMP helpers:
 (define (get-alpha layer x y)
   (let* ((pxi (gimp-drawable-get-pixel layer x y))
 	 (ndim (car pxi))
@@ -60,41 +40,47 @@
 
 ;; (define tt (Templ spec))
 ;;
-;; spec: (filename "path") (cardw ) (cardh ) (xmin ) (ymin ) (xinc )(yinc ) (xlim ) (ylim )
-;;  (card-edge )(corner-radius ) [ncards?] (ncol ) (nrow )
-
 ;;;; EXPORTS: card-to-template, save-if-template-full
-(macro (def-slot form)
-  (let ((name (cadr form))
-	(rest (cddr form)))
-  `(define ,name (util-assq (quote ,name) tspec ,@rest))))
 
+;;;; Entry-point:
+(define (Templ tspec proj)
+  ;; extract field names and orig/default values from assoc-list ['tspec']
+  (macro (def-slot form)
+    (let ((name (cadr form))
+	  (rest (cddr form)))
+      `(define ,name (util-assq (quote ,name) tspec ,@rest))))
 
-(define (Templ tspec)
   (make-environment
     ;; initialize 'fields'
-    (define spec tspec)			  ; original spec [or should we (apply list spec) ?
-    (define file (util-assq 'file tspec)) ; basename.png
-    (define filepath (string-append TEMPLATE-DIR file))
-    (define cardw (util-assq 'cardw tspec 750))	; no bleed
-    (define cardh (util-assq 'cardh tspec 525))	; no bleed
-    (define ncol (util-assq 'ncol tspec 3))
-    (define nrow (util-assq 'nrow tspec 6))
-    (define xmin (util-assq 'xmin tspec 84))	; printer margin
-    (define ymin (util-assq 'ymin tspec 25))	; printer margin
-    (define xinc (util-assq 'xinc tspec cardw))	; 
-    (define yinc (util-assq 'yinc tspec cardh))	; 
-    (define xlim (util-assq 'xlim tspec (+ xmin (* ncol xinc))))
-    (define ylim (util-assq 'ylim tspec (+ ymin (* nrow yinc))))
-    (define origx (util-assq 'origx tspec 0))
-    (define origy (util-assq 'origy tspec 0))
-    (define tempw (util-assq 'xinc tspec xlim))
-    (define temph (util-assq 'xinc tspec ylim))
+    (define spec tspec)			; original spec [or should we (apply list spec) ?
+    (define project proj)		; PROJECT
+    (def-slot file)			; basename.png
+    (define filepath (string-append project::TEMPLATE-DIR file))
 
-    (define card-edge (util-assq 'card-edge tspec 25))	 ; safe
-    (define corner-radius (util-assq 'corner-radius tspec 37)) ; ~ 1/8th inch, 62 ~ 1/5 inch
+    (def-slot cardw 750)		; no bleed
+    (def-slot cardh 525)		; no bleed
+    (def-slot ncol  3)
+    (def-slot nrow  6)
+    (def-slot xmin  84)			; printer margin
+    (def-slot ymin  25)			; printer margin
+    (def-slot xinc  cardw)		; 
+    (def-slot yinc  cardh)		; 
+    (def-slot xlim  (+ xmin (* ncol xinc)))
+    (def-slot ylim  (+ ymin (* nrow yinc)))
+    (def-slot origx 0)
+    (def-slot origy 0)
+    (def-slot tempw xlim)
+    (def-slot temph ylim)
+    (def-slot radi 25)
+    (def-slot edge 25)
+    (def-slot card-edge radi)		; safe
+    (def-slot corner-radius edge)	; ~ 1/8th inch, 62 ~ 1/5 inch
+    (def-slot xoff corner-radius)	; pixel to test for is-card-at
+    (def-slot yoff corner-radius)	; pixel to test for is-card-at
 
+    (define (info) (list file project::PROJECT-DIR LAST-ILXY open-ilxy))
     (define is-portrait? (< cardw cardh)) ; template-orientation
+    (define LAST-ILXY)
 
     ;; define 'methods'
     (define (set-ilxy ilxy . lxy)
@@ -104,14 +90,14 @@
       ;; mark LAST-ILXY as INVALID; with xmin, ymin for next template image
       ;; force open-ilxy-file
       (set-ilxy `(-1 -1 ,xmin ,ymin)))
-    (define LAST-ILXY (set-end-of-template))
+    (set! LAST-ILXY (set-end-of-template))
     
     (define msg-ctt #f)
     ;; put-card
     (define (card-to-template image layer undo context)
       ;; image to next open slot, updating LAST-ILXY
       (and msg-ctt (message-string1 "ctt-0:" image layer undo context))
-      (set-ilxy (get-empty-ilxy))		 ; possibly a new image-template?
+      (set-ilxy (get-empty-ilxy))		     ; possibly a new image-template?
       ;; assert LAST-ILXY is valid image & layer
       (and undo (gimp-image-undo-group-start image)) ; mark for undo
       (card-to-this-ilxy image LAST-ILXY context)    ;
@@ -131,7 +117,7 @@
     ;; assert (image layer) is valid.
     (define (next-ilxy-empty ilxy count)
       (if (< count 1) (throw "Looping:" ilxy))      
-      (if (is-card-at ilxy) 
+      (if (apply is-card-at ilxy) 
 	  (next-ilxy-empty (apply next-ilxy ilxy) (- count 1))
 	ilxy))
 
@@ -139,13 +125,23 @@
     (define (is-card-at image layer lx ly)
       ;; catch & return #t if [lx,ly] is outside of image:
       (let* ((cx (+ lx origx))
-	     (cy (+ ly origx))
+	     (cy (+ ly origy))
 	     (xy (rotated-xy #f cx cy xoff yoff))
 	     (rx (nth 0 xy))
 	     (ry (nth 1 xy))
 	     (alpha (catch 222 (get-alpha layer rx ry))))
-	(message-string "is-card-at:" lx ly "-->" cx cy "-->" rx ry "==>" alpha)
+	(message-string "is-card-at:" `(,image ,layer ,lx ,ly) "-->" cx cy "-->" rx ry "==>" alpha)
 	(> alpha 0)))
+
+    ;; lx, ly are from ILXY; dx, dy identify the 'sample point' of interest
+    (define (rotated-xy portrait? lx ly dx dy) ; dxy: (xoff)(yoff)
+      ;; return (x y) on template equiv to (lx ly) on un-rotated card.
+      (let* ((sp? portrait?)		; src is portrait? mode
+	     (tp? is-portrait?)		; template-slot is portrait?
+	     (norot? (eq? sp? tp?))	; src is not rotated on template...?
+	     (rx (+ lx (if norot? dx (- cardh dy))))
+	     (ry (+ ly (if norot? dy dx))))
+	(list rx ry)))
 
     (define (next-ilxy image layer x y)
       ;; return (image layer x y) of next template slot (maybe new image)
@@ -168,7 +164,7 @@
       ;; return (full? next-x next-y)
 
       ;;(message-string "is-template-full?:" image layer x y (xinc) (yinc) (xmin))
-      (set! x (+ x (xinc))) 		; advance to next slot
+      (set! x (+ x xinc)) 		; advance to next slot
       (let* ((rxy (rotated-xy #f x y cardw cardh))
 	     (rx (nth 0 rxy))
 	     (ry (nth 1 rxy)))
@@ -180,17 +176,8 @@
 	;;(message-string "is-template-full?" (> ry (temph)) x y )
 	(list (> ry temph) (list image layer x y)))
       )
-    ;; lx, ly are from ILXY; dx, dy identify the 'sample point' of interest
-    (define (rotated-xy portrait? lx ly dx dy) ; dxy: (xoff)(yoff)
-      ;; return (x y) on template equiv to (lx ly) on un-rotated card.
-      (let* ((sp? portrait?)		; src is portrait? mode
-	     (tp? is-portrait)		; template-slot is portrait?
-	     (norot? (eq? sp? tp?))	; src is not rotated on template...?
-	     (rx (+ lx (if norot? dx (- cardh dy))))
-	     (ry (+ ly (if norot? dy dx))))
-	(list rx ry)))
 
-    (define msg-open-ilxy #f)
+    (define msg-open-ilxy #t)
 
     ;; backfill existing open-ilxy template OR open a new template from filename
     ;; file: filename OR #t to increment name from current template-image
@@ -198,7 +185,7 @@
       (and msg-open-ilxy (message-string "open-ilxy-file:" file "open-ilxy =" open-ilxy ))
       (or (and (not file) use-backfill (backfill-ilxy) )
 	  ;; get ilxy of a NEW template image
-	  (let* ((image (next-template-file-image file))		     ; -N+1.png
+	  (let* ((image (next-template-file-image file)) ; -N+1.png
 		 (layer (image-base-layer image))
 		 (ilxy (list image layer xmin ymin))
 		 )
@@ -208,6 +195,13 @@
 	    (and msg-open-ilxy (message-string "open-ilxy-file2" file "ilxy:" ilxy "LAST-ILXY" LAST-ILXY))
 	    ilxy
 	    )))
+
+    (define (image-base-layer image)
+      ;; lowest layer of image
+      (let* ((layers (gimp-image-get-layers image))
+	     (nlayer (car layers))
+	     (layerv (cadr layers)))
+	(vector-ref layerv (- nlayer 1))))
 
     ;; holding the FIRST-ILXY for each image (image layer (xmin) (ymin))
     (define open-ilxy '())     
@@ -228,11 +222,60 @@
 	(and msg-open-ilxy (message-string "backfill-ilxy" ilxy "open-ilxy" open-ilxy))
 	ilxy))
 
+    ;; GIMP stuff:
+
+    (define (card-to-this-ilxy image ilxy context)
+      ;; 'image' is a CARD
+      ;; rotate/move image to ilxy & card-parasite-record-image
+      (let* ((layer 0)			       ; src layer (not used)
+	     (srcW (car (gimp-image-width image))) ; (card-width image)
+	     (srcH (car (gimp-image-height image)))
+	     (destImage (nth 0 ilxy))	; implied by destLayer
+	     (destLayer (nth 1 ilxy))
+	     (destX (+ (nth 2 ilxy) origx))
+	     (destY (+ (nth 3 ilxy) origy)))
+	;;(message-string "ctt-ilxy: ILXY=" ilxy "(image layer)" (list image layer))
+
+	;; merge & clip
+	(set! layer (car (gimp-image-merge-visible-layers image CLIP-TO-IMAGE)))
+	(gimp-selection-all image)	; select ALL
+	(gimp-edit-copy layer)		; copy selection to edit-buffer [layer not used]
+	;; return should be TRUE [FALSE iff nothing to copy]
+	(and context (gimp-context-push))
+	(and context (gimp-context-set-defaults))
+
+	(gimp-context-set-transform-resize TRANSFORM-RESIZE-ADJUST)
+	(let* ((rotImage (car (gimp-edit-paste-as-new-image))) ; edit-paste, [rotate], edit-copy
+	       (rotLayer (car (gimp-image-get-active-layer rotImage)))
+	       (floatLayer 0))
+	  (maybeRotate rotLayer (< srcW srcH) is-portrait?)
+	  (gimp-edit-copy rotLayer)			       ; rotated image to edit-buffer
+	  (set! floatLayer (car (gimp-edit-paste destLayer TRUE))) ; paste to template
+	  ;;(gimp-drawable-offset floatLayer FALSE OFFSET-TRANSPARENT destX destY)
+	  (gimp-layer-set-offsets floatLayer destX destY)
+	  (gimp-floating-sel-anchor floatLayer)
+	  (gimp-image-delete rotImage)
+	  (gimp-displays-flush)
+	  ;; Record cross-links in parasites
+	  (card-parasite-record-image image destImage destLayer destX destY)
+	  )
+	(and context (gimp-context-pop))
+	(gimp-displays-flush)
+	))
+
+    (define (maybeRotate layer os od)
+      ;; if orientations differ, then rotate 90-degrees:
+      ;; TODO: scale to match (tempw, temph)??
+      (if (or (and os (not od)) (and od (not os)))
+	  (gimp-item-transform-rotate-simple layer ROTATE-90 FALSE 0 0)))
+    
+    ;; FILE stuff:
+
     (define last-template-filename #f)
     ;; make a new, empty template image (&layer)
     ;; when invoked with a filename, it is likely filename-0.png [the zeroth/original template file]
     ;; if filename == #f, then proceed to *next* incremental filename [max++]
-    (define (next-template-file-image file)	; .../dir2/dir1/card-name-N.png or #t
+    (define (next-template-file-image file) ; .../dir2/dir1/card-name-N.png or #t
       ;; Extract -N.png and use -N+1.png
       ;; file name MUST end with "-N" (this image/file now "filled" with cards)
       ;; find/open version named "-0" [template-0.png, MyMiniCards18-0.png]
@@ -251,11 +294,11 @@
 	     (num-str (number->string new-num))			     ;"N+1"
 	     ;;(xxx (quit-on-limit new-num 10))
 	     (oname (string-append basename "-" num-str dot-type)) ; cards-N+1.png
-	     (cname (string-append TEMPLATE-DIR "/" oname ))	   ; TEMPLATE-DIR/cards-N+1.png
+	     (cname (string-append project::TEMPLATE-DIR "/" oname )) ; TEMPLATE-DIR/cards-N+1.png
 	   
 	     ;; open ${basename}-0.${type} and set next filename:
-	     (name-0 (string-append basename "-0" dot-type)) ; card-name-0.png
-	     (temslash (reverse (cons name-0 (cdr rslash)))) ; (... dir2 dir1 card-name-0.png)
+	     (name-0 (string-append basename "-0" dot-type))  ; card-name-0.png
+	     (temslash (reverse (cons name-0 (cdr rslash))))  ; (... dir2 dir1 card-name-0.png)
 	     (template (unbreakupstr temslash DIR-SEPARATOR)) ;  .../dir2/dir1/card-name-0.png
 	     (image (car (gimp-file-load RUN-NONINTERACTIVE template oname)))
 	     (layer (image-base-layer image))
@@ -300,8 +343,8 @@
 	       (cname (car (gimp-image-get-filename image))) ; TEMPLATE-DIR/template-name-N.png
 	       (oname (util-file-basename cname))	     ; template-name-N.png
 	       (pname (or (para-get-global-pubname) oname)) ; "Homes" or #f; set by card-set-page-name: (0 page "Name")
-	       (sname (rename-to-dir PUB-DIR oname pname))  ; PUB-DIR/pname-N.png
-	       (xname (rename-to-dir TEMPLATE-DIR oname pname "xcf"))
+	       (sname (rename-to-dir project::PUB-DIR oname pname))  ; PUB-DIR/pname-N.png
+	       (xname (rename-to-dir project::TEMPLATE-DIR oname pname "xcf"))
 	       (mode RUN-NONINTERACTIVE))
 	  (message-string "save-template publish:" sname oname)
 	  (para-set-comment image pname)
@@ -309,6 +352,18 @@
 	  (gimp-xcf-save          mode image layer xname oname) ; save .XCF in TEMPLATE-DIR
 	  cname
 	  )))
+
+    (define (rename-to-dir dir oname pname . ext)
+      ;; change directory and basename, retain "-N.png"
+      ;; oname: basename-n.ext
+      ;; pname: newname
+      ;; return DIR/newname-n.ext
+      (let* ((name-dot-type (strbreakup oname "."))			    ; (file-name-N png)
+	     (name-num (strbreakup (car name-dot-type) "-"))		    ; (file name N)
+	     (num (car (reverse name-num)))				    ; N
+	     (type (if (pair? ext) (car ext) (car (reverse name-dot-type))))) ; "png" or [ext]
+	(string-append dir pname "-" num "." type)))
+    
 
     ))
 

@@ -1,15 +1,6 @@
 ;;; GIMP scheme code
 (define BASE-PATH "/Users/jpeck/Google Drive/jpeckj/")
 
-(macro (exports form)
-  (let* ((syms (cdr form)))
-    `(let* ((defs (map (lambda (symf)
-		      (let* ((sym (if (pair? symf) (car symf) symf))
-			     (binds (if (pair? symf) (cadr symf) sym))
-			     (bind (eval binds)))
-			`(define ,sym ,bind))) (quote ,syms))))
-    `(list ,@defs))))
-
 (define (util-load-path0 project name)
   (let* ((base BASE-PATH)
      (gimp "GIMP/2.0")
@@ -31,6 +22,20 @@
 
 (define (util-file-extension filename)
   (car (reverse (strbreakup filename "."))))
+
+;;;; export (define symbol ..) from inner closure/env [using eval on the return value]
+;;;; maybe obsolete, now we are using make-environment::symbol
+(macro (exports form)
+  (let* ((syms (cdr form)))
+    `(let* ((defs (map (lambda (symf)
+		      (let* ((sym (if (pair? symf) (car symf) symf))
+			     (binds (if (pair? symf) (cadr symf) sym))
+			     (bind (eval binds)))
+			`(define ,sym ,bind))) (quote ,syms))))
+    `(list ,@defs))))
+
+
+(define (starts-with? str prefix) (string-prefix? prefix str))
 
 ;;; if the last thing after last 'sep' is 'suffix'
 (define (string-ends-with string sep suffix)

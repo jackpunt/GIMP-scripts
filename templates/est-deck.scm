@@ -36,25 +36,30 @@
 (define DO-TEMPLATE #f)		     ; #t: card-put-image on template-image VS card-write-info
 (define CARD-DISPLAY? #t)	     ; #t: card-put-image also force DISPLAY for each card-image
 (define CARD-SAVE-PNG #t)	     ; #t: if DO-GIMP write .PNG; #f: TEST/TEMPLATE: no CARD.PNG
-(define CARD-SIZE `(750 525))	     ; nominal: (750 525) no bleed
 (define CARD-EDGE 25)		     ; safe-edge
 (define CARD-RADIUS 37)		     ; in GUI: 15% of 525/2 ~34 px; 37.5 = 1/8"
 
+(define citymap (Project "citymap"))
+(define estates (Project "Estates"))
 
-(define (est-setup project template do-info do-template card-display save-png)
-  (template-use project template)
+(define citymap-templ (Templ MY-MINI-18-SPEC citymap))
+(define estates-templ (Templ PPG-MINI-36-SPEC estates))
+(define token-templ (Templ MY-TOKEN-24-SPEC estates))
+
+(define templ estates-templ)
+
+(define (est-setup template do-info do-template card-display save-png)
+  (set! templ template)
   (set! DO-INFO do-info)
   (set! DO-TEMPLATE do-template)
   (set! CARD-DISPLAY? card-display)
   (set! CARD-SAVE-PNG save-png)
-  (set! CARD-SIZE TEMPLATE-CARD-SIZE)
-  (set! CARD-EDGE TEMPLATE-EDGE)
-  (set! CARD-RADIUS TEMPLATE-RADI)
-  (message-string "PROJECT:" project (car template))
+  (set! CARD-EDGE templ::card-edge)
+  (message-string "PROJECT:" template::project::PROJECT-DIR template::file)
   )
 
-(define (do-citymap) (est-setup "citymap"  MY-MINI-18-SPEC  #t #f #t #t))
-(define (do-estates) (est-setup "Estates"  PPG-MINI-36-SPEC #f #t #f #f))
+(define (do-citymap) (est-setup citymap-templ  #t #f #t #t))
+(define (do-estates) (est-setup estates-templ #f #t #f #f))
 (do-estates)
  
 (define CARD-LOOP #t)		   ; #f to stop generation loops [tends to kill script-fu/GIMP]
@@ -118,11 +123,14 @@
 (def-para-get para-get-alt-template "alt-template")
 
 (gimp-message "card define CARD functions")
+;; size/orientation of a given CARD:
+(define (card-width image)  (car (gimp-image-width image)))
+(define (card-height image) (car (gimp-image-height image)))
 
 (define (card-select-rr image . radius)
   (let ((w (card-width image))
 	(h (card-height image))
-	(r (if (pair? radius) (car radius) CARD-RADIUS)))
+	(r (if (pair? radius) (car radius) templ::corner-radius)))
     (gimp-image-select-round-rectangle image CHANNEL-OP-REPLACE 0 0 w h r r)))
 
 (define (card-select-edge-rect image x y w h)
@@ -133,7 +141,7 @@
 (define card-force-display #f)
 (define (card-make-base-image w h . args)
   ;; new card, WHITE Background layer
-  (let* ((radius (util-opt-arg args CARD-RADIUS))
+  (let* ((radius (util-opt-arg args templ::corner-radius))
 	 (image (car (gimp-image-new w h RGB)))
 	 (layer (car (gimp-layer-new image w h RGBA-IMAGE "base-layer" 100 LAYER-MODE-NORMAL))))
     (gimp-drawable-fill layer FILL-WHITE)
@@ -180,10 +188,10 @@
     layer))
 
 (define (template-width portrait?)
-  (apply (if portrait? min max) CARD-SIZE))
+  (if portrait? templ::cardh templ::cardw))
 
 (define (template-height portrait?)
-  (apply (if portrait? max min) CARD-SIZE))
+  (if portrait? templ::cardw templ::cardh))
   
 (define (card-make-base portrait? color ty by)
   ;; portrait #t or #f (for landscape)
@@ -512,7 +520,7 @@
 
 (define (card-filename-from-title title . args)
   (let ((ext (util-opt-arg args ".png")))
-    (string-append CARD-DIR (card-dashify-name-ext title ext))))
+    (string-append templ::project::CARD-DIR (card-dashify-name-ext title ext))))
 
 (define (card-set-title image title . tweaks)
   ;; set Title and Filename
@@ -712,7 +720,7 @@
 	(h (util-opt-arg args)))
     (if msg-set-image (message-string1 "card-set-image1:" `(card-set-image ,image ,filename ,@(list x y w h))))
 
-    (let* ((filepath (string-append IMAGE-DIR filename))
+    (let* ((filepath (string-append templ::project::IMAGE-DIR filename))
 	   (msg1 (if msg-set-image (message-string "card-set-image: filepath =" filepath)))
 	   (layer (car (gimp-file-load-layer RUN-NONINTERACTIVE image filepath)))
 	   (iw (layer-width layer))
@@ -846,8 +854,8 @@
   (let ((eject (if (pair? rest) (car rest) #f))) ; (eject (util-opt-arg rest #f))
     (message-string1 "card-set-page-name" name "eject=" eject)
     (when eject
-	  (save-if-template-full #t)	; save IFF not already saved
-	  (set-end-of-template)		; mark template 'full' (or INVALID?) possibly leave empty slots
+	  (templ::save-if-template-full #t) ; save IFF not already saved
+	  (templ::set-end-of-template) ; mark template 'full' (or INVALID?) possibly leave empty slots
 					; next card will begin new template/page
 	  ))
   (para-set-global-pubname name)	; record 'name' in global parasite (parasites->card-global-pubname = name)
@@ -917,17 +925,15 @@
 (define DOT-BAND #f)			      ; 123.5
 (define DOT-XY #f)			      ; #(vector 7)
 
-(define (square-portrait-bands card-size)
+(define (square-portrait-bands tw th)
   ;; bands to leave square in middle of partrait image
-  (let* ((tw (nth 0 card-size))		; 750 - 525 = 225 
-	 (th (nth 1 card-size))
-	 (cw (min tw th))
+  (let* ((cw (min tw th))
 	 (ch (max tw th)))
     ;;(set! CARD-DOT-SIZE (* (/ (- cw DOT-EDGE DOT-EDGE) 3) .88)) ;; shrink from 1/3 of reduced width
     (ceiling (/ (- ch cw) 2))))
 
 (define (get-dot-band)
-  (or DOT-BAND (set! DOT-BAND (square-portrait-bands CARD-SIZE))))
+  (or DOT-BAND (set! DOT-BAND (square-portrait-bands templ::cardw templ::cardh))))
 
 
 (define (make-dot-xy dot-band dot-edge dot-size)
@@ -1052,6 +1058,7 @@
     image-layer)
   )
 
+;; pseudo card for an auction-mat:
 (define (card-type-auction nreps name cost1 cost2 color)
   ;; name mostly for mini-vec; maybe we could label the color slots...
   (let* ((portrait? #t)
@@ -1288,7 +1295,7 @@
 	 (filen (util-assq 'filen extras title))
 	 ;; convert GIMP color to CSS color in stringify
 	 (size CIRCLE-IMAGE-SIZE)	;
-	 (sf (/ size 250))		; CIRCLE-IMAGE-SIZE is smaller than normal CARD-SIZE
+	 (sf (/ size 250))		; CIRCLE-IMAGE-SIZE is smaller than normal cardw/cardh
 	 (radius (/ size 2))		; "rounded rectangle" is a circle
 	 (subtype (util-assq 'subtype extras nil))
 	 (font CARD-VP-FONT)		; bold
@@ -1424,12 +1431,12 @@
   ;; put nreps copies of card image onto template (also: sf-to-template-nreps)
   (catch
     (begin (message-string "card-do-template-nreps catch" CARD-LOOP "nreps" nreps) #t)
-    (let ((cache (cache-template-if-alt image)))
+    ;;(let ((cache (cache-template-if-alt image)))
       (while (and (> nreps 0) CARD-LOOP)
-	(card-to-template image (card-base-layer image) undo context) ; and save-if-template-full
+	(templ::card-to-template image (card-base-layer image) undo context) ; and save-if-template-full
 	(set! nreps (- nreps 1)))
       (set! CARD-LOOP #t)
-      (and cache (restore-template-cache cache)))
+      ;;(and cache (restore-template-cache cache)))
     ))
 
 (define (displayed? image)
@@ -1596,7 +1603,7 @@
     ;; invoke do-line on each element of deck vector: either card-make-one-card OR do-page
     (do-spec-vector deck do-line)
     
-    (if named? (save-if-template-full #t))) ; ensure partial page is exported. (maybe backfill and re-export!)
+    (if named? (templ::save-if-template-full #t))) ; ensure partial page is exported. (maybe backfill and re-export!)
   (and context (gimp-context-pop))
   )
 
@@ -1635,7 +1642,7 @@
 	(card-make-deck deck)		; no typescript/info, no display/output
 
 	;; card-write-info with-output-to-file-catch:
-	(let* ((dirname (string-append BASE-DIR PROJECT-DIR "/cardinfo/"))
+	(let* ((dirname (templ::project::dirpath "/cardinfo/"))
 	       (filename (string-append dirname filen ".ts")))
 	  (message-string1 "write CardInfo(deck) to file" class filename)
 	  (if (with-output-to-file-catch #f filename deck-to-file)
