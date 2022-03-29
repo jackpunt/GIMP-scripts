@@ -1,7 +1,13 @@
 ;; load utils.scm if not already loaded:
 (require "lib/utils" util-opt-arg)			; so macros are defined
 (require "templates/script-fu-para-cards" def-para-set)	; load in the proper order...
-(require "templates/script-fu-card-template" templ)	; load in the proper order...
+;;(require "templates/script-fu-card-template" templ)	; load in the proper order...
+(require "templates/templ" Templ PPG-MINI-36-SPEC)	; load in the proper order...
+
+;; save-if-template-full
+;; save/restore?
+;; on-template-full: find-next-slot (backfill or open-file or next-spot-on-higher-template)
+;; skip: next-slot-on-template
 
 ;; Angular-11 (> 8) ng serve does not build assets across symlink. (Jan 2021)
 ;; NOW: "citymap" project directs finished cards to .../ng/citymap/src/assets/main/images/cards/  (citymap/cards -> .../ng/.../cards)

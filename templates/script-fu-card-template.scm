@@ -19,6 +19,23 @@
 
 ;;; choose with (template-use 'project-dir' SOME-SPEC)
 
+(define (SPEC-to-spec spec)
+  (let ((file (nth 0 spec))
+	(cards (nth 1 spec))
+	(tmoi (cddr spec)))
+    `((file ,(car spec))
+      (cardw ,(nth 0 cards))
+      (cardh ,(nth 1 cards))
+      (xmin ,(nth 0 tmoi))
+      (ymin ,(nth 1 tmoi))
+      (xinc ,(nth 2 tmoi))
+      (yinc ,(nth 3 tmoi))
+      (edge ,(nth 4 tmoi))
+      (radi ,(nth 5 tmoi))
+      (xlim ,(and (> (length tmoi) 6) (nth 6 tmoi)))
+      (ylim ,(and (> (length tmoi) 7) (nth 7 tmoi)))
+      )))
+
 (define TEMPLATE MY-MINI-18-SPEC)
 (define TEMPLATE-FILE (car MY-MINI-18-SPEC))
 (define TEMPLATE-CARD-SIZE (apply list (cadr MY-MINI-18-SPEC))) ; copy just to be safe
@@ -36,41 +53,6 @@
 ;; set by open-ilxy-file if not supplied here:
 (define TEMPLATE-XLIM (and (> (length TEMPLATE-MIN-OFFSET-INC) 6) (nth 6 TEMPLATE-MIN-OFFSET-INC)))
 (define TEMPLATE-YLIM (and (> (length TEMPLATE-MIN-OFFSET-INC) 7) (nth 7 TEMPLATE-MIN-OFFSET-INC)))
-
-  
-(define Templ
-  (make-environment
-    (define file)
-    (define card-size)
-    (define cardw)
-    (define cardh)
-    (define tempw)
-    (define temph)
-    (define xmin)
-    (define ymin)
-    (define xinc)
-    (define yinc)
-    (define edge)
-    (define radi)
-    (define (new spec)
-      )
-    (define last-ilxy)
-    (define next-empty-ilxy)
-    ))
-
-
-(define PROJECT-DIR "")
-(define IMAGE-DIR BASE-DIR)
-(define CARD-DIR BASE-DIR)
-(define PUB-DIR  BASE-DIR)
-(define TEMPLATE-DIR BASE-DIR)
-
-(define (set-template-dirs proj)
-  (set! PROJECT-DIR  proj)
-  (set! IMAGE-DIR    (string-append BASE-DIR proj "/images/"))
-  (set! CARD-DIR     (string-append BASE-DIR proj "/cards/"))
-  (set! PUB-DIR      (string-append BASE-DIR proj "/publish/"))
-  (set! TEMPLATE-DIR (string-append BASE-DIR proj "/templates/")))
 
 (define (set-template-spec spec)
   (set! TEMPLATE spec)
