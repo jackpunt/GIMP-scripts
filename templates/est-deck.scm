@@ -44,7 +44,16 @@
 
 (define citymap-templ (Templ MY-MINI-18-SPEC citymap))
 (define estates-templ (Templ PPG-MINI-36-SPEC estates))
-(define token-templ (Templ MY-TOKEN-24-SPEC estates))
+(define (token-templ-open templ file)
+  (message-string "token-templ-open:" (templ::info) file)
+  (or (and (not file) templ::use-backfill (templ::backfill-ilxy))
+      (let ((empty-ilxy (estates-templ::get-empty-ilxy)))
+	(templ::enable-save-template #f)
+	(templ::set-orig-xy (nth 2 empty-ilxy) (nth 3 empty-ilxy))
+	(templ::set-ilxy (nth 0 empty-ilxy) (nth 1 empty-ilxy) templ::xmin templ::ymin)
+	)))
+;;; splice token-templ-open into MY-TOKEN-24-SPEC:
+(define token-templ (Templ `(,@MY-TOKEN-24-SPEC (open-ilxy-func ,token-templ-open)) estates))
 
 (define templ estates-templ)
 
@@ -1325,7 +1334,7 @@
 	 ;; splice in (size VP/2)
 	 (set-cdr! vp-args `(,(cadr vp-args) (size ,size) (left ,left) (lead ,lead) ,@(cddr vp-args))))
        (card-set-extras image extras)			; add image & VP
-       (para-set-alt-template image "MY-TOKEN-24-SPEC") ; indicate special template
+       ;;(para-set-alt-template image "token-templ")	; indicate special template
        image-layer)
      (if msg-type-circle (message-string1 "card-type-circle:" 'image-layer= image-layer filen type title))
      (let ((name filen) (props `((noStop #t))))
@@ -1354,7 +1363,7 @@
        (gimp-image-set-filename image (card-filename-from-title filen))
        (gimp-selection-all image)		      ; size X size
        (card-set-fill image 'center 'center VC_COLOR) ; fill square with BLACK (VC color)
-       (para-set-alt-template image "MY-TOKEN-24-SPEC")	; indicate special template
+       (para-set-alt-template image "token-templ")    ; indicate special template
        (cond ((equal? title "VcOwned")
 	      (gimp-selection-shrink image (/ size 4))
 	      (card-set-fill image 'center 'center color) ; fill circle with color [GREEN or DEBT]
@@ -1370,73 +1379,35 @@
      )
     ))
 
-;; save current template & open-ilxy
-;; template-use alt-template
-;; base-ilxy = (next-ilxy LAST-ILXY)
-;; adjust LAST-ILXY: add (xmin) & (ymin) to XY [start-new-template @ (xmin) (ymin)]
-;; do nreps
-;; restore orig template, restore ILXY
-(define (save-template-cache alt-template)
-  (message-string "save-template-cache0:" alt-template)
-  (let* ((cache-template (get-template)) ; --> (-1 -1 ...)
-	 (last-ilxy LAST-ILXY)
-	 (open-ilxy (get-open-ilxy))
-	 (orig-xy (list TEMPLATE-ORIG-X TEMPLATE-ORIG-Y))
-	 (msg1 (message-string "save-template-cache1: LAST-ILXY" LAST-ILXY))
-	 (base-ilxy (get-empty-ilxy)))	; via next-ilxy-empty
-    (when alt-template
-      (and #t (message-string "save-template-cache2: base-ilxy" base-ilxy))
-      ;; put a white card on the slot  (is-card-at will true hereafter)
-      ;; (let* ((il (card-make-base-image (cardw) (cardh))))
-      ;; 	(card-to-template (nth 0 il) (nth 1 il) #f #t))
-      (template-use PROJECT-DIR alt-template) ; do not change PROJECT-DIR
-      (set-ilxy (nth 0 base-ilxy) (nth 1 base-ilxy) (xmin) (ymin)) ; Note: might be '(-1 -1 ...)
-      (set! TEMPLATE-ORIG-X (nth 2 base-ilxy))
-      (set! TEMPLATE-ORIG-Y (nth 3 base-ilxy))
-      (set-open-ilxy '())
-      (and #t (message-string "save-template-cache3: base-ilxy" base-ilxy "LAST-ILXY" LAST-ILXY))
-      (templ::enable-save-template #f))	; disable saving
-    (message-string "save-template-cache4: LAST-ILXY" LAST-ILXY)
-    (list cache-template base-ilxy open-ilxy orig-xy)
-    ))
-
 (define (restore-template-cache cache)
   ;; TODO: retain LAST-ILXY and feed into base-ilxy for next alt-template! (backfill...)
   (message-string "restore-template-cache:" cache)
-  (let ((template (nth 0 cache))
-	(base-ilxy (nth 1 cache))
-	(open-ilxy (nth 2 cache))
-	(orig-xy (nth 3 cache))
-	(last-ilxy LAST-ILXY))
-    (template-use PROJECT-DIR template) ; reset LAST-ILXY!!
-    ;; use existing (image layer); orig/base (x y) [which should be (is-card-at i l x y)]
-    ;;(set! LAST-ILXY last-ilxy) (set-cdr! (cdr LAST-ILXY) (cddr base-ilxy))
-    (set! LAST-ILXY `(,(nth 0 last-ilxy) ,(nth 1 last-ilxy) ,(nth 2 base-ilxy) ,(nth 3 base-ilxy)))
-    (set-open-ilxy open-ilxy)
-    (set! TEMPLATE-ORIG-X (nth 0 orig-xy))
-    (set! TEMPLATE-ORIG-Y (nth 1 orig-xy))
-    (templ::enable-save-template #t)	; re-enable saving
-    )
-  (message-string "restored: LAST-ILXY =" LAST-ILXY)
+  (set! templ cache)
+  (message-string "restored: templ =" (templ::info))
   )
 
 (define (cache-template-if-alt image)
-  (let* ((alt-template-name (para-get-alt-template image))
-	 (alt-template (and alt-template-name (eval (string->symbol alt-template-name))))
-	 (and alt-template-name (message-string "cache-template-if-alt:" alt-template))
-	 (cache (and alt-template (save-template-cache alt-template))))  
-    cache))
+  (let* ((orig-template templ)
+	 (alt-template-name (para-get-alt-template image))
+	 (alt-template (and alt-template-name (eval (string->symbol alt-template-name)))))
+    (and alt-template (message-string "cache-template-if-alt:" (alt-template::info)))
+    (when alt-template (set! templ alt-template))
+    (if (not alt-template) #f
+      ;; TinyScheme fails if we put (set! templ ...) here
+      orig-template	
+      )
+    ))
 
 (define (card-do-template-nreps image nreps undo context)
   ;; put nreps copies of card image onto template (also: sf-to-template-nreps)
   (catch
     (begin (message-string "card-do-template-nreps catch" CARD-LOOP "nreps" nreps) #t)
-    ;;(let ((cache (cache-template-if-alt image)))
+    (let ((cache (cache-template-if-alt image)))
       (while (and (> nreps 0) CARD-LOOP)
 	(templ::card-to-template image (card-base-layer image) undo context) ; and save-if-template-full
 	(set! nreps (- nreps 1)))
       (set! CARD-LOOP #t)
-      ;;(and cache (restore-template-cache cache)))
+      (and cache (restore-template-cache cache)))
     ))
 
 (define (displayed? image)
@@ -1542,21 +1513,21 @@
       (when image			; from (page) or (deck) or (not DO-GIMP)
 	(and msg-make-one (message-string1 "try card-put-image" image nreps CARD-DISPLAY? DO-TEMPLATE))
 	;; put full scale image to display and/or template 
-	(card-put-image image nreps CARD-DISPLAY? DO-TEMPLATE) ; maybe show card-image on DISPLAY & DO-TEMPLATE
+	(card-put-image image nreps CARD-DISPLAY? DO-TEMPLATE)
 	(let ((filename (car (gimp-image-get-filename image)))
 	      (has-been-saved (lambda(image) (para-get-comment image))))
 	  (and msg-make-one (message-string1 "try merge-and-save" filename))
 	  (when (and (string? filename) (> (string-length filename) 0) CARD-SAVE-PNG)
-	    ;; write scaled image to .PNG file
+	    ;; scale image and write to .PNG file
 	    (when (not (has-been-saved image)) ; indicates image still UNSCALED
 	      (let ((w (card-scale (card-width image)))
 		    (h (card-scale (card-height image))))
 		(and msg-make-one (message-string1 "try scale image" w h))
 		(gimp-image-scale image w h)))
-	    ;; save at current scale:
+	    ;; save at card-scale: (suitable for citymap)
 	    (and msg-make-one (message-string1 "try file-merge-and-save" image))
-	    (file-merge-and-save image)))
-	)
+	    (file-merge-and-save image)) ; for PNG and JPG
+	  ))
       image-layer)			; or (#f pagename)
     )
   ;; if      (DO-TEMPLATE && (< n 0)) ==> dont make image
@@ -1571,12 +1542,12 @@
 (define (do-spec-vector deck proc)
   (let* ((line 0) (nlines (vector-length deck)))
     (catch
-     (begin (message-string "do-spec-vector catch" CARD-LOOP "line" line "of" nlines) #t)
-     (while (and (< line nlines) CARD-LOOP)
-       (proc (vector-ref deck line))
-       (set! line (+ 1 line)))
-     (set! CARD-LOOP #t)
-     )))
+      (begin (message-string "do-spec-vector CATCH" CARD-LOOP "line" line "of" nlines (templ::info) (aref (cadr (gimp-image-list)) 0) #t))
+      (while (and (< line nlines) CARD-LOOP)
+	(proc (vector-ref deck line))
+	(set! line (+ 1 line)))
+      (set! CARD-LOOP #t)
+      )))
 
 (define (card-make-deck deck)
   ;; deck is array of array #(n, title, filename, type, ep stop rent cost text1 . extra
@@ -1845,12 +1816,12 @@
      (-12 circle "Tower"      "house" GREEN2 14 () () 8 () (vp 15))
 
      ;; should be 12 or 24 for production
-     (6 square "VcOwned"    "marker" RED   1 () () 0 ())
-     ;; (6 square "VcOwned"    "marker" BLUE  1 () () 0 ())
+     (12 square "VcOwned"    "marker" RED   1 () () 0 ())
+     (12 square "VcOwned"    "marker" BLUE  1 () () 0 ())
      ;; (6 square "VcOwned"    "marker" GREEN 1 () () 0 ())
-     ;; (6 square "NoRent"     "marker" RED   1 () () 0 ())
-     ;; (6 square "NoRent"     "marker" BLUE  1 () () 0 ())
-     (6 square "NoRent"     "marker" GREEN 1 () () 0 ())
+     (12 square "NoRent"     "marker" RED   1 () () 0 ())
+     (12 square "NoRent"     "marker" BLUE  1 () () 0 ())
+     ;;(6 square "NoRent"     "marker" GREEN 1 () () 0 ())
      )))
 (define MINI-TOKEN
   #((0 deck "TokenDeck")

@@ -151,12 +151,12 @@
     
     ))
 
-(define msg-file-save #f)
+(define msg-file-save #t)
 ;;; This may even work for basename.xcf
 (define (file-merge-and-save image . cardname)
   ;; filename set by open-all OR by card-set-title (deck-builder)
-  ;; expect card.png to be in CARD-DIR
-  ;; template.xcf in TEMPLATE-DIR (and template.png in PUB-DIR)
+  ;; expect card.png or card.jpg to be in CARD-DIR
+  ;; template.xcf in XCF-DIR (and template.png in PUB-DIR)
   (let* ((toplayer (car (gimp-image-merge-visible-layers image CLIP-TO-IMAGE)))
 	 (filename (car (gimp-image-get-filename image))) ; as was loaded (pro'ly CARD-DIR)
 	 (basename (util-file-basename filename)))

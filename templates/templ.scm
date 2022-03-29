@@ -25,8 +25,9 @@
     (define PROJECT-DIR proj)
     (define (dirpath . path) (apply string-append BASE-DIR proj path))
     (define IMAGE-DIR (dirpath "/images/"))
-    (define CARD-DIR (dirpath "/images/"))
-    (define PUB-DIR  (dirpath "/cards/"))
+    (define CARD-DIR (dirpath "/cards/"))
+    (define PUB-DIR  (dirpath "/publish/"))
+    (define XCF-DIR  (dirpath "/xcf/"))
     (define TEMPLATE-DIR (dirpath "/templates/"))
   ))
 
@@ -54,8 +55,9 @@
     ;; initialize 'fields'
     (define spec tspec)			; original spec [or should we (apply list spec) ?
     (define project proj)		; PROJECT
-    (def-slot file)			; basename.png
+    (def-slot file #f)			; basename.png
     (define filepath (string-append project::TEMPLATE-DIR file))
+    (def-slot open-ilxy-func #f)	; (open-ilxy-func templ file|#f)
 
     (def-slot cardw 750)		; no bleed
     (def-slot cardh 525)		; no bleed
@@ -81,6 +83,8 @@
     (define (info) (list file project::PROJECT-DIR LAST-ILXY open-ilxy))
     (define is-portrait? (< cardw cardh)) ; template-orientation
     (define LAST-ILXY)
+
+    (define (set-orig-xy x y) (set! origx x) (set! origy y))
 
     ;; define 'methods'
     (define (set-ilxy ilxy . lxy)
@@ -109,7 +113,7 @@
     (define (get-empty-ilxy)
       (when (< (car LAST-ILXY) 0)
 	(and msg-ctt (message-string "ctt-1: OPEN TEMPLATE:" file))
-	(set-ilxy (open-ilxy-file filepath)))
+	(set-ilxy (open-ilxy-file file)))
       (next-ilxy-empty LAST-ILXY 40)
       )
       
@@ -177,24 +181,28 @@
 	(list (> ry temph) (list image layer x y)))
       )
 
-    (define msg-open-ilxy #t)
+    (define msg-open-ilxy #f)
 
     ;; backfill existing open-ilxy template OR open a new template from filename
     ;; file: filename OR #t to increment name from current template-image
     (define (open-ilxy-file file)
       (and msg-open-ilxy (message-string "open-ilxy-file:" file "open-ilxy =" open-ilxy ))
-      (or (and (not file) use-backfill (backfill-ilxy) )
-	  ;; get ilxy of a NEW template image
-	  (let* ((image (next-template-file-image file)) ; -N+1.png
-		 (layer (image-base-layer image))
-		 (ilxy (list image layer xmin ymin))
-		 )
-	    (if (not xlim) (set! xlim (car (gimp-image-width image))))
-	    (if (not ylim) (set! ylim (car (gimp-image-height image))))
-	    (set-open-ilxy (cons ilxy (get-open-ilxy))) ; shift onto open-ilxy
-	    (and msg-open-ilxy (message-string "open-ilxy-file2" file "ilxy:" ilxy "LAST-ILXY" LAST-ILXY))
-	    ilxy
-	    )))
+      (if open-ilxy-func
+	  (open-ilxy-func templ file)
+	(or (and (not file) use-backfill (backfill-ilxy)) ; try use backfill-ilxy
+	    ;; get ilxy of a NEW template image
+	    (let* ((filepath (string-append project::TEMPLATE-DIR file))
+		   (image (next-template-file-image filepath)) ; -N+1.png
+		   (layer (image-base-layer image))
+		   (ilxy (list image layer xmin ymin))
+		   )
+	      (if (not xlim) (set! xlim (car (gimp-image-width image))))
+	      (if (not ylim) (set! ylim (car (gimp-image-height image))))
+	      (set-open-ilxy (cons ilxy (get-open-ilxy))) ; shift onto open-ilxy
+	      (and msg-open-ilxy (message-string "open-ilxy-file2" file "ilxy:" ilxy "LAST-ILXY" LAST-ILXY))
+	      ilxy
+	      ))
+	))
 
     (define (image-base-layer image)
       ;; lowest layer of image
@@ -344,12 +352,12 @@
 	       (oname (util-file-basename cname))	     ; template-name-N.png
 	       (pname (or (para-get-global-pubname) oname)) ; "Homes" or #f; set by card-set-page-name: (0 page "Name")
 	       (sname (rename-to-dir project::PUB-DIR oname pname))  ; PUB-DIR/pname-N.png
-	       (xname (rename-to-dir project::TEMPLATE-DIR oname pname "xcf"))
+	       (xname (rename-to-dir project::XCF-DIR oname pname "xcf"))
 	       (mode RUN-NONINTERACTIVE))
 	  (message-string "save-template publish:" sname oname)
 	  (para-set-comment image pname)
 	  (file-png-save-defaults mode image layer sname oname) ; save .PNG in PUB-DIR
-	  (gimp-xcf-save          mode image layer xname oname) ; save .XCF in TEMPLATE-DIR
+	  (gimp-xcf-save          mode image layer xname oname) ; save .XCF in XCF-DIR
 	  cname
 	  )))
 
