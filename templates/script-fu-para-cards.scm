@@ -137,17 +137,17 @@
   ;; find referenced image from template/card-id
   ;; save file to image-filename and remove display for destImage
   ;;(message-string "close-card-image" card-id "pname=" pname "destImage=" destImage)
-  (let* ((cardname-image (strbreakup card-id ":")); (card-name.png image)
-	 (cardname (nth 0 cardname-image))	  ; basename (= title-dash.png)
+  (let* ((cardname-image (strbreakup card-id ":")) ; (card-name.png image)
+	 (cardname (nth 0 cardname-image))	   ; basename (= title-dash.png)
 	 (imagestr (nth 1 cardname-image))
 	 (image (string->number imagestr))
 	 (filename0 (string-append CARD-DIR cardname)))
-    (when (gimp-image-is-valid image)  ; image maybe not open
-	  ;; (catch nil ; because display->image may change async...
-	  (file-merge-and-save image cardname)
-	  (para-kill-display image)
-	  (gimp-displays-flush)
-	  )
+    (when (gimp-image-is-valid image) ; image maybe not open
+      ;; (catch nil ; because display->image may change async...
+      (file-merge-and-save image cardname)
+      (para-kill-display image)
+      (gimp-displays-flush)
+      )
     
     ))
 

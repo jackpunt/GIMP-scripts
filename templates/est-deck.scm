@@ -103,8 +103,6 @@
 
 (define context #t)
 
-(define (card-width image)  (car (gimp-image-width image)))
-(define (card-height image) (car (gimp-image-height image)))
 (define (card-scale dim) (floor (* dim CARD-SCALE)))
 
 (def-para-set card-set-nreps "nreps" number->string)
@@ -980,6 +978,7 @@
 	     (card-set-title image title `(filen ,filen)) ; "Move 3" "Move-PURPLE-3"
 	     (card-set-type image type `(lineno .3)))     ; actual Move cards
 	   )
+       ;;(message-string "card-type-move:" value dot-keys)
        (for-each make-dot-for-key dot-keys)
        image-layer)
      (let ((cost value) (name filen) (color (eval-sym color)))
@@ -1314,7 +1313,6 @@
 	 (set-cdr! vp-args `(,(cadr vp-args) (size ,size) (left ,left) (lead ,lead) ,@(cddr vp-args))))
        (card-set-extras image extras)			; add image & VP
        (para-set-alt-template image "MY-TOKEN-24-SPEC") ; indicate special template
-       ;;(gimp-image-scale image (* .5 (card-width image)) (* .5 (card-height image))) ; 125 125
        image-layer)
      (if msg-type-circle (message-string1 "card-type-circle:" 'image-layer= image-layer filen type title))
      (let ((name filen) (props `((noStop #t))))
@@ -1345,7 +1343,7 @@
        (card-set-fill image 'center 'center VC_COLOR) ; fill square with BLACK (VC color)
        (para-set-alt-template image "MY-TOKEN-24-SPEC")	; indicate special template
        (cond ((equal? title "VcOwned")
-	      (gimp-selection-shrink image (/ size 3))
+	      (gimp-selection-shrink image (/ size 4))
 	      (card-set-fill image 'center 'center color) ; fill circle with color [GREEN or DEBT]
 	      )
 	     ((equal? title "NoRent")
@@ -1367,7 +1365,7 @@
 ;; restore orig template, restore ILXY
 (define (save-template-cache alt-template)
   (message-string "save-template-cache0:" alt-template)
-  (let* ((cache-template (get-template))
+  (let* ((cache-template (get-template)) ; --> (-1 -1 ...)
 	 (last-ilxy LAST-ILXY)
 	 (open-ilxy (get-open-ilxy))
 	 (orig-xy (list TEMPLATE-ORIG-X TEMPLATE-ORIG-Y))
@@ -1379,24 +1377,34 @@
       ;; (let* ((il (card-make-base-image (cardw) (cardh))))
       ;; 	(card-to-template (nth 0 il) (nth 1 il) #f #t))
       (template-use PROJECT-DIR alt-template) ; do not change PROJECT-DIR
-      (set-ilxy (nth 0 base-ilxy) (nth 1 base-ilxy) (xmin) (ymin))
+      (set-ilxy (nth 0 base-ilxy) (nth 1 base-ilxy) (xmin) (ymin)) ; Note: might be '(-1 -1 ...)
       (set! TEMPLATE-ORIG-X (nth 2 base-ilxy))
       (set! TEMPLATE-ORIG-Y (nth 3 base-ilxy))
       (set-open-ilxy '())
       (and #t (message-string "save-template-cache3: base-ilxy" base-ilxy "LAST-ILXY" LAST-ILXY))
       (templ::enable-save-template #f))	; disable saving
     (message-string "save-template-cache4: LAST-ILXY" LAST-ILXY)
-    (list cache-template last-ilxy open-ilxy orig-xy)
+    (list cache-template base-ilxy open-ilxy orig-xy)
     ))
 
 (define (restore-template-cache cache)
+  ;; TODO: retain LAST-ILXY and feed into base-ilxy for next alt-template! (backfill...)
   (message-string "restore-template-cache:" cache)
-  (template-use PROJECT-DIR (nth 0 cache))
-  (set! LAST-ILXY (nth 1 cache))
-  (set-open-ilxy (nth 2 cache))
-  (set! TEMPLATE-ORIG-X (nth 0 (nth 3 cache)))
-  (set! TEMPLATE-ORIG-Y (nth 1 (nth 3 cache)))
-  (templ::enable-save-template #t)	; re-enable saving
+  (let ((template (nth 0 cache))
+	(base-ilxy (nth 1 cache))
+	(open-ilxy (nth 2 cache))
+	(orig-xy (nth 3 cache))
+	(last-ilxy LAST-ILXY))
+    (template-use PROJECT-DIR template) ; reset LAST-ILXY!!
+    ;; use existing (image layer); orig/base (x y) [which should be (is-card-at i l x y)]
+    ;;(set! LAST-ILXY last-ilxy) (set-cdr! (cdr LAST-ILXY) (cddr base-ilxy))
+    (set! LAST-ILXY `(,(nth 0 last-ilxy) ,(nth 1 last-ilxy) ,(nth 2 base-ilxy) ,(nth 3 base-ilxy)))
+    (set-open-ilxy open-ilxy)
+    (set! TEMPLATE-ORIG-X (nth 0 orig-xy))
+    (set! TEMPLATE-ORIG-Y (nth 1 orig-xy))
+    (templ::enable-save-template #t)	; re-enable saving
+    )
+  (message-string "restored: LAST-ILXY =" LAST-ILXY)
   )
 
 (define (cache-template-if-alt image)
@@ -1817,18 +1825,19 @@
      ;;    type   name         types  color cost... vp text
      (-32 circle "Debt"       "Debt"  DEBT   () () () 0 () ) ;(image "Debt.png"))
 
-     (12 circle "House"      "house" GREEN2  2 () () 0.5 () (vp 1))
-     (12 circle "Triplex"    "house" GREEN2  5 () () 1 () (vp  3))
-     (12 circle "Apartments" "house" GREEN2  8 () () 2 () (vp  6))
-     (12 circle "High Rise"  "house" GREEN2 11 () () 4 () (vp 10))
-     (12 circle "Tower"      "house" GREEN2 14 () () 8 () (vp 15))
+     (-12 circle "House"      "house" GREEN2  2 () () 0.5 () (vp 1))
+     (-12 circle "Triplex"    "house" GREEN2  5 () () 1 () (vp  3))
+     (-12 circle "Apartments" "house" GREEN2  8 () () 2 () (vp  6))
+     (-12 circle "High Rise"  "house" GREEN2 11 () () 4 () (vp 10))
+     (-12 circle "Tower"      "house" GREEN2 14 () () 8 () (vp 15))
 
-     (12 square "VcOwned"    "marker" RED   1 () () 0 ())
-     (12 square "VcOwned"    "marker" BLUE  1 () () 0 ())
-     (12 square "VcOwned"    "marker" GREEN 1 () () 0 ())
-     (12 square "NoRent"     "marker" RED   1 () () 0 ())
-     (12 square "NoRent"     "marker" BLUE  1 () () 0 ())
-     (12 square "NoRent"     "marker" GREEN 1 () () 0 ())
+     ;; should be 12 or 24 for production
+     (6 square "VcOwned"    "marker" RED   1 () () 0 ())
+     ;; (6 square "VcOwned"    "marker" BLUE  1 () () 0 ())
+     ;; (6 square "VcOwned"    "marker" GREEN 1 () () 0 ())
+     ;; (6 square "NoRent"     "marker" RED   1 () () 0 ())
+     ;; (6 square "NoRent"     "marker" BLUE  1 () () 0 ())
+     (6 square "NoRent"     "marker" GREEN 1 () () 0 ())
      )))
 (define MINI-TOKEN
   #((0 deck "TokenDeck")
