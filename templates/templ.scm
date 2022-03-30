@@ -10,7 +10,7 @@
 
 (define PPG-MINI-36-SPEC '((file "PPGMiniCard36-0.png") (cardw 800) (cardh 575)
 			   (xmin 150) (ymin 100) (xinc 833) (yinc 578.25)
-			   (bleed 25) (xlim 3600) (ylim 5400))) ; 5400
+			   (over 1) (bleed 25) (xlim 3600) (ylim 5400))) ; 5400
 
 (define MY-MINI-18-SPEC '((file "MyMiniCard18-0.png") (cardw 750) (cardh 525)
 			  (xmin 84) (ymin 25) (xinc 752) (yinc 527)
@@ -64,12 +64,23 @@
     (define filepath (string-append project::TEMPLATE-DIR file))
     (def-slot open-ilxy-func #f)	; (open-ilxy-func templ file|#f)
 
-    (def-slot cardw 750)		; no bleed
-    (def-slot cardh 525)		; no bleed
-    (def-slot ncol  3)
-    (def-slot nrow  6)
+    (def-slot over 0)			; OR: tweak published numbers
     (def-slot xmin  84)			; printer margin
     (def-slot ymin  25)			; printer margin
+    (def-slot cardw 750)		; no bleed
+    (def-slot cardh 525)		; no bleed
+    (def-slot radi 37)			; ~1/8th inch; then add bleed
+    (def-slot safe 25)
+    (def-slot bleed 0)
+    (set! xmin  (- xmin  over))
+    (set! ymin  (- ymin  over))
+    (set! cardw (+ cardw over over))
+    (set! cardh (+ cardh over over))
+    (set! safe  (+ safe  over))
+    (set! bleed (+ bleed over))
+
+    (def-slot ncol  3)
+    (def-slot nrow  6)
     (def-slot xinc  cardw)		; 
     (def-slot yinc  cardh)		; 
     (def-slot xlim  (+ xmin (* ncol xinc)))
@@ -78,9 +89,6 @@
     (def-slot origy 0)
     (def-slot tempw xlim)
     (def-slot temph ylim)
-    (def-slot radi 37)			; ~1/8th inch; then add bleed
-    (def-slot safe 25)
-    (def-slot bleed 0)
     (def-slot corner-radius (+ radi bleed))
     (def-slot xoff corner-radius)	; pixel to test for is-card-at
     (def-slot yoff corner-radius)	; pixel to test for is-card-at

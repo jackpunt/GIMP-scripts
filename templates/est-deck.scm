@@ -139,7 +139,9 @@
   (let ((w (card-width image))
 	(h (card-height image))
 	(r (if (pair? radius) (car radius) templ::corner-radius))) ; (util-opt-arg radius templ::radi)
-    (gimp-image-select-round-rectangle image CHANNEL-OP-REPLACE 0 0 w h r r)))
+    (gimp-image-select-round-rectangle image CHANNEL-OP-REPLACE 0 0 w h r r)
+    (gimp-selection-sharpen image)
+    ))
 
 (define (card-select-edge-rect image x y w h)
   ;;(message-string1 "card-select-edge-rect" image x y w h)
