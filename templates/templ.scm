@@ -2,22 +2,27 @@
 
 (define PPG-POKER-18-SPEC '((file "PPGPoker18-0.png") (cardw 1108) (cardh 808)
 			    (xmin 120) (ymin 85) (xinc 1125) (yinc 825)
-			    (ncol 3) (nrow 6) (edge 50) (radi 62)))
+			    (ncol 3) (nrow 6) (bleed 25)))
+
 (define MY-POKER-8-SPEC '((file "MyPoker8-0.png") (cardw 1108) (cardh 808)
 			  (xmin 11) (ymin 85) (xinc 1125) (yinc 825)
-			  (ncol 2) (nrow 4) (edge 50) (radi 62)))
+			  (ncol 2) (nrow 4) (bleed 25)))
+
 (define PPG-MINI-36-SPEC '((file "PPGMiniCard36-0.png") (cardw 800) (cardh 575)
 			   (xmin 150) (ymin 100) (xinc 833) (yinc 578.25)
-			   (edge 50) (radi 62) (xlim 3600) (ylim 5400)))
+			   (bleed 25) (xlim 3600) (ylim 5400))) ; 5400
+
 (define MY-MINI-18-SPEC '((file "MyMiniCard18-0.png") (cardw 750) (cardh 525)
 			  (xmin 84) (ymin 25) (xinc 752) (yinc 527)
-			  (ncol 3) (ncol 6) (edge 25) (radi 37)))
+			  (ncol 3) (ncol 6) (bleed 0)))
+
 (define MY-MICRO-18-SPEC '((file "MyMiniCard18-0.png") (cardw 250) (cardh 175)
 			  (xmin 84) (ymin 25) (xinc 752) (yinc 527)
-			  (ncol 3) (ncol 6) (edge 25) (radi 37))) ; dubious
+			  (ncol 3) (ncol 6) (bleed 0))) ; dubious
+
 (define MY-TOKEN-24-SPEC '((file "MyTokenSpec-0.png") (cardw 115) (cardh 115)
 			   (xmin 50) (ymin 50) (xinc 117) (yinc 117)
-			   (edge 1) (radi 1) (xlim 750) (ylim 525))) 
+			   (bleed 0) (radi 1) (xlim 750) (ylim 525))) 
 
 (define (Project proj . base)
   (make-environment
@@ -73,10 +78,10 @@
     (def-slot origy 0)
     (def-slot tempw xlim)
     (def-slot temph ylim)
-    (def-slot radi 25)
-    (def-slot edge 25)
-    (def-slot card-edge radi)		; safe
-    (def-slot corner-radius edge)	; ~ 1/8th inch, 62 ~ 1/5 inch
+    (def-slot radi 37)			; ~1/8th inch; then add bleed
+    (def-slot safe 25)
+    (def-slot bleed 0)
+    (def-slot corner-radius (+ radi bleed))
     (def-slot xoff corner-radius)	; pixel to test for is-card-at
     (def-slot yoff corner-radius)	; pixel to test for is-card-at
 
@@ -103,6 +108,7 @@
       (and msg-ctt (message-string1 "ctt-0:" image layer undo context))
       (set-ilxy (get-empty-ilxy))		     ; possibly a new image-template?
       ;; assert LAST-ILXY is valid image & layer
+      (and msg-ctt (message-string1 "ctt-2:" LAST-ILXY))
       (and undo (gimp-image-undo-group-start image)) ; mark for undo
       (card-to-this-ilxy image LAST-ILXY context)    ;
       (save-if-template-full)		; TRY THIS! eager save when template is full
@@ -134,7 +140,7 @@
 	     (rx (nth 0 xy))
 	     (ry (nth 1 xy))
 	     (alpha (catch 222 (get-alpha layer rx ry))))
-	(message-string "is-card-at:" `(,image ,layer ,lx ,ly) "-->" cx cy "-->" rx ry "==>" alpha)
+	;;(message-string "is-card-at:" `(,image ,layer ,lx ,ly) "-->" cx cy "-->" rx ry "==>" alpha)
 	(> alpha 0)))
 
     ;; lx, ly are from ILXY; dx, dy identify the 'sample point' of interest
@@ -150,7 +156,7 @@
     (define (next-ilxy image layer x y)
       ;; return (image layer x y) of next template slot (maybe new image)
       (let* ((full-ilxy (is-template-full? image layer x y))
-	     ;;(msg1 (message-string "next-ilxy: full-ilxy=" full-ilxy))
+	     (msg1 (and msg-ctt (message-string "next-ilxy: full-ilxy=" full-ilxy)))
 	     (full? (nth 0 full-ilxy))
 	     (rv-ilxy (if full?
 			  ;; open new (image layer xmin ymin) [or BACKFILL partial template]
@@ -185,11 +191,11 @@
 
     ;; backfill existing open-ilxy template OR open a new template from filename
     ;; file: filename OR #t to increment name from current template-image
-    (define (open-ilxy-file file)
-      (and msg-open-ilxy (message-string "open-ilxy-file:" file "open-ilxy =" open-ilxy ))
+    (define (open-ilxy-file given-file)
+      (and msg-open-ilxy (message-string "open-ilxy-file:" given-file file "open-ilxy =" open-ilxy ))
       (if open-ilxy-func
-	  (open-ilxy-func templ file)
-	(or (and (not file) use-backfill (backfill-ilxy)) ; try use backfill-ilxy
+	  (open-ilxy-func templ given-file)
+	(or (and (not given-file) use-backfill (backfill-ilxy)) ; try use backfill-ilxy
 	    ;; get ilxy of a NEW template image
 	    (let* ((filepath (string-append project::TEMPLATE-DIR file))
 		   (image (next-template-file-image filepath)) ; -N+1.png
@@ -219,7 +225,7 @@
     (define use-backfill #t)
     (define (set-use-backfill val) (set! use-backfill val))
 
-    ;; return ILXY or #f
+    ;; return (next-empty-ilxy open-ilxy) or #f
     (define (backfill-ilxy)
       (define (prune-open ilxy)
 	(let ((open? (catch #f (next-empty-ilxy ilxy))))   ; #f if image is invalid/deleted
@@ -229,6 +235,14 @@
       (let ((ilxy (list-search-positive open-ilxy prune-open))) ; next-empty-ilxy
 	(and msg-open-ilxy (message-string "backfill-ilxy" ilxy "open-ilxy" open-ilxy))
 	ilxy))
+
+    ;; return ILXY of empty slot on given image-template OR #f if template is full
+    (define (next-empty-ilxy ilxy)
+      ;; assert (image layer) is valid.
+      (if (not (apply is-card-at ilxy)) ilxy
+        (let ((full-ilxy (apply is-template-full? ilxy)))
+          (if (car full-ilxy) #f (next-empty-ilxy (nth 1 full-ilxy))))))
+  
 
     ;; GIMP stuff:
 

@@ -36,7 +36,7 @@
 (define DO-TEMPLATE #f)		     ; #t: card-put-image on template-image VS card-write-info
 (define CARD-DISPLAY? #t)	     ; #t: card-put-image also force DISPLAY for each card-image
 (define CARD-SAVE-PNG #t)	     ; #t: if DO-GIMP write .PNG; #f: TEST/TEMPLATE: no CARD.PNG
-(define CARD-EDGE 25)		     ; safe-edge
+(define CARD-EDGE 25)		     ; safe-edge + bleed
 (define CARD-RADIUS 37)		     ; in GUI: 15% of 525/2 ~34 px; 37.5 = 1/8"
 
 (define citymap (Project "citymap"))
@@ -63,7 +63,7 @@
   (set! DO-TEMPLATE do-template)
   (set! CARD-DISPLAY? card-display)
   (set! CARD-SAVE-PNG save-png)
-  (set! CARD-EDGE templ::card-edge)
+  (set! CARD-EDGE (+ templ::bleed templ::safe))
   (message-string "PROJECT:" template::project::PROJECT-DIR template::file)
   )
 
@@ -103,10 +103,9 @@
 (define ROUNDED ".SF Compact Rounded weight=557")
 (define TEXTFONT ROUNDED)		; use TIMENR or ROUNDED for all non-numeric Text
 
-(define CARD-TOP-BAND 115)		; Band at top for title [25 25 40 25] [safe,asc,font,desc]
 (define CARD-COIN-BAND 98)		; Band near top for: Step, Stop, Rent
-(define CARD-BOTTOM-BAND 120)		; Band at bottom for type, cost, VP
-
+(define (card-top-band) (+ 115 templ::bleed)) ; TODO compute size for x-large/small cards??
+(define (card-bottom-band) (+ 130 templ::bleed))
 
 (define CARD-TITLE-FONT TEXTFONT)
 (define CARD-TITLE-SIZE 60)
@@ -139,7 +138,7 @@
 (define (card-select-rr image . radius)
   (let ((w (card-width image))
 	(h (card-height image))
-	(r (if (pair? radius) (car radius) templ::corner-radius)))
+	(r (if (pair? radius) (car radius) templ::corner-radius))) ; (util-opt-arg radius templ::radi)
     (gimp-image-select-round-rectangle image CHANNEL-OP-REPLACE 0 0 w h r r)))
 
 (define (card-select-edge-rect image x y w h)
@@ -190,7 +189,7 @@
 	 (layer (card-base-layer image)))
     (card-select-edge-rect image 0 0 xw ty)
     (gimp-drawable-edit-fill layer FILL-FOREGROUND)
-    (card-select-edge-rect image 0 (- yh by) xw by)
+    (card-select-edge-rect image 0 (- yh by) xw (+ 1 by)) ; h+1 for edge arithmetic
     (gimp-drawable-edit-fill layer FILL-FOREGROUND)
     (gimp-selection-none image)
     (gimp-context-set-foreground BLACK)
@@ -203,8 +202,10 @@
   (if portrait? templ::cardw templ::cardh))
   
 (define (card-make-base portrait? color ty by)
-  ;; portrait #t or #f (for landscape)
-  ;; color of CARD-TOP-BAND and CARD-BOTTOM-BAND
+  ;; portrait: #t or #f (for landscape)
+  ;; color: of (card-top-band) and (card-bottom-band)
+  ;; ty: TOP: [0--ty]
+  ;; by: BOT: [by--cardh]
   ;;(message-string1 "card-make-base: portrait=" portrait color)
   (let* ((w (template-width portrait?))
 	 (h (template-height portrait?))
@@ -544,7 +545,7 @@
 (define (card-price-bar-height image)
   ;; if there is a price bar, return its height
   (let* ((layer (card-base-layer image))
-	 (color (car (gimp-image-pick-color image layer 30 (+ 30 CARD-TOP-BAND) FALSE TRUE 4))))
+	 (color (car (gimp-image-pick-color image layer 30 (+ 30 (card-top-band)) FALSE TRUE 4))))
     (if (> (color-dist color WHITE) 32) CARD-COIN-BAND 0)))
 
 (define (card-set-text image text . args)
@@ -553,7 +554,7 @@
   (let* ((lead (util-assq 'lead args (* 2 6))) ; 2x line "spacing" of 50pixel font
 	 (size CARD-TEXT-SIZE)
 	 (font CARD-TEXT-FONT)
-	 (top (+ lead CARD-TOP-BAND (card-price-bar-height image))))
+	 (top (+ lead (card-top-band) (card-price-bar-height image))))
     ;; card-set-text is not given any "tweak" (unless embedded in text)
     (card-make-text-layer image text 'center top CENTER size font BLACK nil)))
 
@@ -569,8 +570,8 @@
 	     (size (card-font-width-for-card image text size0 font))
 	     (lead (* 2 6))		; 3x line "spacing"
 	     (height (card-text-layer-height text size font))
-	     (liney (- 0 (+ CARD-BOTTOM-BAND height lead lead)))
-	     (texty (- 0 (+ CARD-BOTTOM-BAND height lead)))
+	     (liney (- 0 (+ (card-bottom-band) height lead lead)))
+	     (texty (- 0 (+ (card-bottom-band) height lead)))
 	     (margin 40) (thick 5)
 	     )
 	(card-set-line image liney BLACK margin thick)
@@ -596,7 +597,7 @@
 	 (xwide (- (card-width image) CARD-EDGE CARD-EDGE CARD-COIN-SIZE (/ CARD-COIN-SIZE .84) ))
 	 (size (card-shrink-font-for-width xwide text CARD-TYPE-SIZE fontn))
 	 (offset (if lineno (lineoff lineno) 0))
-	 (bot (- (- CARD-BOTTOM-BAND offset))))
+	 (bot (- (- (card-bottom-band) offset))))
     ;;(message-string1 "card-set-type" offset bot)
     (card-make-text-layer image text 'center bot CENTER size fontn BLACK tweaks)))
 
@@ -636,7 +637,7 @@
 	 (fontn (util-assq 'font args CARD-VP-FONT))
 	 (size (/ font-size .82))  ; compute radius :: font-size = (* .82 size) in card-set-coin
 	 (x (- left (+ CARD-EDGE (/ size 2)))) ; CARD-EDGE minus "coin-radius" then CENTER
-	 (y (- top (+ CARD-BOTTOM-BAND 4)))    ; fudge by 4 for font-size ~70; tweak with 'lead
+	 (y (- top (+ (card-bottom-band) 4)))    ; fudge by 4 for font-size ~70; tweak with 'lead
 	 ;; for citymap, we shrink and recenter, so text fits under the ValueCounter
 	 ;; (size 50) (lead 18) (left -8)
 	 )
@@ -657,7 +658,7 @@
 	     (size (* .3 CARD-COIN-SIZE)) ; tiny
 	     (x (- 0 edge (/ size 2)))	  ; on the edge; should be (- 0 edge (/ text-width 2)))
 	     (y (- 0 edge size)))	  ; as close as possible to bottom
-	(message-string "card-set-ext" text x y)
+	;;(message-string "card-set-ext" text x y)
 	(apply card-make-text-layer-and-tweak image text x y CENTER size CARD-TEXT-FONT BLACK tweaks)))
   )
 ;;(define (card-make-text-layer-and-tweak image text x y justify size fontname color . tweaks))
@@ -687,7 +688,7 @@
   ;; TODO: find the color at the spot: (gimp-drawable-get-pixel layer sx xy)
   (let* ((layer (card-base-layer image))
 	 (sx CARD-EDGE)			; where to 'sample' for contiguous color
-	 (sy (+ CARD-EDGE CARD-TOP-BAND CARD-COIN-BAND))
+	 (sy (+ CARD-EDGE (card-top-band) CARD-COIN-BAND))
 	 (k1 (gimp-image-select-contiguous-color image CHANNEL-OP-REPLACE layer sx sy))
 	 (bounds (gimp-selection-bounds image))
 	 (mar (if raw? 0 CARD-EDGE))	; raw? #t: full-image, #f: inset by CARD-EDGE
@@ -805,14 +806,15 @@
   ;;(message-string1 "card-set-price-bar" image step stop rent)
   ;; assert card/image is portrait mode:
   (when (not (and (null? step) (null? stop) (null? rent)))
-    (let* ((top (or (util-pop args) CARD-TOP-BAND))
+    (let* ((top (or (util-pop args) (card-top-band)))
 	   (color (or (util-pop args) '(100 100 100))) ; light grey
-	   (size (or (util-pop args) CARD-COIN-SIZE))
+	   (size (or (util-pop args) CARD-COIN-SIZE))  ; diameter
 	   (p? #t)
-	   (x 0) (y top) (w (template-width p?)) (h (+ size 10))
-	   (cc (/ size 2))
+	   (pad 5)			; 90 + 10 total height
+	   (x 0) (y top) (w (template-width p?)) (h (+ size pad pad))
+	   (cc (/ size 2))		; radius
 	   (cy (+ y (/ h 2)))
-	   (ce (+ CARD-EDGE 5 cc)))
+	   (ce (+ CARD-EDGE pad cc)))
       ;;(card-select-edge-rect image x y w h)
       (gimp-image-select-rectangle image CHANNEL-OP-REPLACE x y w h)
       (card-set-fill image x y color )
@@ -825,8 +827,8 @@
 
 (define (card-set-big-coin image valu)
   ;; Make big coin for ATM, Bank, etc.
-  (let* ((h (- (card-height image) CARD-TOP-BAND CARD-COIN-BAND 10 10 CARD-BOTTOM-BAND ))
-	 (cy (+  CARD-TOP-BAND CARD-COIN-BAND 10 (/ h 2))))
+  (let* ((h (- (card-height image) (card-top-band) CARD-COIN-BAND 10 10 (card-bottom-band) ))
+	 (cy (+  (card-top-band) CARD-COIN-BAND 10 (/ h 2))))
     (apply card-make-coin image valu 'center cy h `((oval .8))))
   )
 
@@ -892,7 +894,9 @@
     (gimp-image-set-filename image (card-filename-from-title name))
     ;; embed cost=card-width & step=card-height on Card with type="Back"
     ;; so Javascript can determine Card size before Image is loaded.
-    (let ((nreps 1) (type "Back") (cost (card-scale (card-width image))) (step (card-scale (card-height image))))
+    (let ((nreps 1) (type "Back")
+	  (cost (card-scale (card-width image)))
+	  (step (card-scale (card-height image))))
       (card-write-info filen (syms-to-alist nreps type name cost step)))
     image-layer
     ))
@@ -934,24 +938,33 @@
 (define DOT-BAND #f)			      ; 123.5
 (define DOT-XY #f)			      ; #(vector 7)
 
-(define (square-portrait-bands tw th)
-  ;; bands to leave square in middle of partrait image
-  (let* ((cw (min tw th))
-	 (ch (max tw th)))
-    ;;(set! CARD-DOT-SIZE (* (/ (- cw DOT-EDGE DOT-EDGE) 3) .88)) ;; shrink from 1/3 of reduced width
-    (ceiling (/ (- ch cw) 2))))
-
 (define (get-dot-band)
-  (or DOT-BAND (set! DOT-BAND (square-portrait-bands templ::cardw templ::cardh))))
+  ;; for DOTS, DIR & ROADS: (all PORTRAIT orientation, with square interior) 
+  (when (not DOT-BAND)
+    (let* ((mar templ::safe)		; white space around DOTS
+	   (cw (min templ::cardw templ::cardh))
+	   (ch (max templ::cardw templ::cardh)) ; or (template-height #t)?
+	   (ce templ::bleed)
+	   (ce2 (+ ce ce))
+	   (ww (- cw ce2))		 ; 575-100 = 475
+	   (wh (- ch ce2))		 ; 
+	   (sq (- ww mar mar))		 ; 525-50  = 475
+	   (bb (/ (- wh sq mar mar) 2))) ; 2*bb + sq +2*mar + ce2 ==> cardh
+      (set! DOT-EDGE (+ ce mar))
+      (set! DOT-BAND (+ bb ce))
+      (set! CARD-DOT-SIZE (ceiling (* .294 sq))) ; = sq * 125/425
+      ;;(message-string "get-dot-band" ce ce2 ww wh sq bb DOT-BAND CARD-DOT-SIZE)
+      ))
+  DOT-BAND) ; 113 for citymap @ 750, 25
 
-
-(define (make-dot-xy dot-band dot-edge dot-size)
+(define (make-dot-xy dot-band dot-edge dot-size) ; !!!! dot-size === band!!
   ;; x-y location of each of 9 DOTS:
-  (let* ((dot-s2 (/ dot-size 2))
-	 (dot-dl (+ dot-edge 5 dot-s2))
+  (let* ((mar 25); 5?
+	 (dot-s2 (/ dot-size 2))
+	 (dot-dl (+ dot-edge mar dot-s2)) ; 25 + 20 + 5 + ds2
 	 (dot-dr (- dot-dl))
 	 (dot-dc 'center)
-	 (dot-dt (+ dot-edge 5 dot-s2 dot-band))
+	 (dot-dt (+ mar dot-s2 dot-band)) ; 25 + 20 + 5 + ds2 + band
 	 (dot-db (- dot-dt))
 	 (dot-list `((,dot-dc ,dot-dc)	; element 0...
 		     (,dot-dl ,dot-dt) (,dot-dc ,dot-dt) (,dot-dr ,dot-dt)
@@ -1009,44 +1022,60 @@
 
 (define (card-type-dir nreps name . args)
   ;; Identify Direction Restrictions: name containing "[NESW]"
+  (define (bar-size)
+    (let ((ce templ::bleed)		; 0 or 25 (remove bleed, inset to visible area)
+	  (cardw (template-width #t))	; 525 or 575; (- cardw ce) = 475
+	  (cardh (template-height #t)))
+      (* .0667 (- cardw ce ce))		; 35 for MINI card [35/525]
+      ))
+
+
   (define (dir-bar image name block?)
     (define (edge-bar x y w h color)	; AMBIENT image
       (gimp-image-select-rectangle image CHANNEL-OP-REPLACE x y w h) ; card-select-edge?
       (card-set-fill image (+ x (/ w 2)) (+ y (/ h 2)) color))
 
-    (let* ((del 35)
+    (let* ((ce templ::bleed)		; 0 or 25 (remove bleed, inset to visible area)
+	   (cardw (template-width #t))	; 525 or 575; (- cardw ce) = 475
+	   (cardh (template-height #t))
+	   (del (bar-size))		; 35 for MINI card [35/525]
+	   (delh del)
+	   (delw (+ del ce))		; fill the bleed area (if any)
 	   (mar 0)
-	   (band (get-dot-band))
+	   (band (get-dot-band))	; vertical
 	   (bandx 0)
 	   (bandy (+ band mar))
-	   (cardw (card-width image))
-	   (cardh (card-height image))
 	   (xl (+ bandx 0))
 	   (yt (+ bandy 0))
-	   (xr (- cardw bandx del))
-	   (yb (- cardh bandy del))
+	   (xr (- cardw bandx delw -1))
+	   (yb (- cardh bandy delh))
 	   (barw (- cardw bandx bandx))
 	   (barh (- cardh bandy bandy))
 	   (c1 (if block? RED GREEN))
 	   (c2 (if block? GREEN RED))
 	   )
-      (edge-bar xl yt barw del (if (string-contains name "N") c1 c2))
-      (edge-bar xl yb barw del (if (string-contains name "S") c1 c2))
-      (edge-bar xl yt del barh (if (string-contains name "W") c1 c2))
-      (edge-bar xr yt del barh (if (string-contains name "E") c1 c2))
+      ;; note: no attempt at mitre: just lay them down in this order:
+      (edge-bar xl yt barw delh (if (string-contains name "N") c1 c2))
+      (edge-bar xl yb barw delh (if (string-contains name "S") c1 c2))
+      (edge-bar xl yt delw barh (if (string-contains name "W") c1 c2))
+      (edge-bar xr yt delw barh (if (string-contains name "E") c1 c2))
       ))
   ;; -------------------
   
   (let* ((type (util-opt-arg args "Direction")) ; or "Blocked"
 	 (block? (not (equal? type "Direction")))
 	 (band (get-dot-band))
-	 (fontn DIR-TYPE-FONT)
 	 (image-layer (card-make-base #t GREY band band))
 	 (image (car image-layer))
 	 (layer (cadr image-layer))
-	 (cardw (- (card-width image) DOT-EDGE DOT-EDGE))
-	 ;; shink to fit width:
-	 (size (card-shrink-font-for-width cardw name 400 fontn))
+	 (cardw (min templ::cardw templ::cardh)) ; (template-width #t)?
+	 (bleed templ::bleed)
+	 (bars (bar-size))
+	 (fontn DIR-TYPE-FONT)
+	 (mar 5)
+	 (safew (- cardw bleed bleed bars bars mar mar)) ; working-width
+	 ;; shink text (SW) to fit width:
+	 (size (card-shrink-font-for-width safew name 400 fontn))
 	 ;;(msg (message-string1 "card-type-dir" name size))
 	 (height (card-text-layer-height name size fontn))
 	 (white-size (- (card-height image) band band))
@@ -1099,7 +1128,7 @@
 (define (card-image-load name)
   ;; insert an [IMAGE-DIR] image to card
   (let ((oname (string-append name ".png")))
-    (car (gimp-file-load RUN-NONINTERACTIVE (string-append IMAGE-DIR oname) oname))))
+    (car (gimp-file-load RUN-NONINTERACTIVE (string-append templ::project::IMAGE-DIR oname) oname))))
 
 (define (copy-to-named name)
   ;; return name of buffer containing name.png
@@ -1141,11 +1170,11 @@
     (car (gimp-edit-named-paste layer name TRUE)))
 
   (define (card-set-road-cost image cost . args)
-    ;; raise coin up, because smaller BASE region
+    ;; lower coin, because smaller BASE region
     (let* ((size CARD-COIN-SIZE)
 	   (rad (/ size 2))
 	   (cx (+ CARD-EDGE 2 rad))
-	   (cy (+ (- cx) 5)))				; 5 pixels north
+	   (cy (+ (- cx) 5)))				; 5 pixels south; OR: (- (- cx 5))
       (apply card-make-coin image cost cx cy size args) ; pass-thru if `(r180 #t)
       ))
 
@@ -1205,7 +1234,7 @@
 (define (card-generic portrait type title color cost text . tweaks)
   ;;(message-string1 "card-generic" portrait type color title cost text)
   (let* ((filen (util-assq 'filen tweaks title))
-	 (image-layer (card-make-base portrait color CARD-TOP-BAND CARD-BOTTOM-BAND))
+	 (image-layer (card-make-base portrait color (card-top-band) (card-bottom-band)))
 	 (image (car image-layer))
 	 (layer (cadr image-layer)))
     ;;(message-string1 "card-generic" title filen)
@@ -1254,7 +1283,7 @@
 	 (ext   (util-assq 'ext extras "Base"))
 	 (subtype (util-assq 'subtype extras nil))
 	 (vp (util-assq 'vp extras nil))) ; get the vp value
-    (set! extras `((ext ,ext) (step, step) ,@extras))
+    (set! extras `((ext ,ext) ,@extras))
     (if (equal? subtype "Transit") (set! color TRANSIT-COLOR))
     (if (equal? subtype "Com-Transit") (set! color COM-TRANSIT-COLOR))
 
@@ -1330,7 +1359,7 @@
        (let ((vp-args (assq 'vp extras))
 	     (size (* sf CARD-VP-SIZE))
 	     (left (* sf (+ CARD-EDGE)))
-	     (lead (* sf CARD-BOTTOM-BAND)))
+	     (lead (* sf (card-bottom-band))))
 	 ;; splice in (size VP/2)
 	 (set-cdr! vp-args `(,(cadr vp-args) (size ,size) (left ,left) (lead ,lead) ,@(cddr vp-args))))
        (card-set-extras image extras)			; add image & VP
@@ -1401,7 +1430,8 @@
 (define (card-do-template-nreps image nreps undo context)
   ;; put nreps copies of card image onto template (also: sf-to-template-nreps)
   (catch
-    (begin (message-string "card-do-template-nreps catch" CARD-LOOP "nreps" nreps) #t)
+    (begin (message-string "card-do-template-nreps catch" CARD-LOOP "nreps" nreps
+			   (templ::info) (aref (cadr (gimp-image-list)) 0)) #t)
     (let ((cache (cache-template-if-alt image)))
       (while (and (> nreps 0) CARD-LOOP)
 	(templ::card-to-template image (card-base-layer image) undo context) ; and save-if-template-full
@@ -1816,12 +1846,12 @@
      (-12 circle "Tower"      "house" GREEN2 14 () () 8 () (vp 15))
 
      ;; should be 12 or 24 for production
-     (12 square "VcOwned"    "marker" RED   1 () () 0 ())
-     (12 square "VcOwned"    "marker" BLUE  1 () () 0 ())
-     ;; (6 square "VcOwned"    "marker" GREEN 1 () () 0 ())
-     (12 square "NoRent"     "marker" RED   1 () () 0 ())
-     (12 square "NoRent"     "marker" BLUE  1 () () 0 ())
-     ;;(6 square "NoRent"     "marker" GREEN 1 () () 0 ())
+     (24 square "VcOwned"    "marker" RED   1 () () 0 ())
+     (24 square "VcOwned"    "marker" BLUE  1 () () 0 ())
+     (24 square "VcOwned"    "marker" GREEN 1 () () 0 ())
+     ;; (24 square "NoRent"     "marker" RED   1 () () 0 ())
+     ;; (24 square "NoRent"     "marker" BLUE  1 () () 0 ())
+     ;; (22 square "NoRent"     "marker" GREEN 1 () () 0 ())
      )))
 (define MINI-TOKEN
   #((0 deck "TokenDeck")
@@ -1946,7 +1976,7 @@
 
 (define TILE-DECK
   (expandify
-  #((0 deck "TileDeck" "tile-deck")	; name of file & object in js/ts
+  #((0 deck "TileDeck" "tile-deck" #t)	; name of file & object in js/ts
     ;;
     (0 page "Coins" #t)
     (6 fin "ATM"              1 1 1 1 () (coin 1) (subtype "Bank"))
@@ -2878,7 +2908,7 @@
     ;; (1 mov "YELLOW-5" YELLOW 5)
     ;; (1 mov "YELLOW-6" YELLOW 6)
 
-    (0 back "Distance Back" GREY #t 260 260 "Distance")
+    ;; (0 back "Distance Back" GREY #t 260 260 "Distance")
     ))
 
 (define DIR-DECK
@@ -2892,7 +2922,7 @@
     (2 dir "NE")
     (2 dir "SE")
     (2 dir "SW")
-    (0 back "Direction Back" GREY #t 260 260 "Direction")
+    ;;(0 back "Direction Back" GREY #t 260 260 "Direction")
     ))
 
 (define DIR-DECK2
@@ -3131,7 +3161,7 @@
       (cond
        ((equal? deck-str "ALL")
 	(for-each card-make-deck-with-file
-		  (list DOTS-DECK DIR-DECK ALIGN-DECK HOME-DECK		     ; special backs
+		  (list DOTS-DECK DIR-DECK ALIGN-DECK HOME-DECK TOKEN-DECK   ; special backs
 			TILE-DECK EVENT-DECK POLICY-DECK TECH-DECK ROAD-DECK ; City-Back
 			)))
        ((equal? deck-str "CARDS")
