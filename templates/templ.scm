@@ -405,3 +405,7 @@
     ))
 
 (message-string "templ loaded")
+
+;;; Local Variables:
+;;; eval: (save-backup "~/Data/Programs/ng/citymap/src/app/cardinfo/templ.scm")
+;;; End:
