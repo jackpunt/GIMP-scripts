@@ -98,13 +98,13 @@
     vec))
 
 ;;; return car (or #f) and set to cdr
-;; (let ((opt-arg1 (or (util-pop args) default1))
-;;       (opt-arg2 (or (util-pop args) default2))
+;; (let ((opt-arg1 (or (util-pop args) default1)) ;; (util-opt-arg args default1)
+;;       (opt-arg2 (or (util-pop args) default2)) ;; (util-opt-arg args default2)
 (macro (util-pop form)
   (let ((sym (cadr form)))
     `(if (pair? ,sym)
 	 (let ((rv (car ,sym)))
-	   (set! ,sym (cdr ,sym))
+	   (set! ,sym (cdr ,sym))	; pop ,sym
 	   rv)
 	 #f)))
 

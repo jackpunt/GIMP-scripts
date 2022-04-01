@@ -1,4 +1,5 @@
 (require "templates/script-fu-para-cards.scm" 'file-merge-and-save)
+(message-string "loading templ.scm")
 
 (define PPG-POKER-18-SPEC '((file "PPGPoker18-0.png") (cardw 1108) (cardh 808)
 			    (xmin 120) (ymin 85) (xinc 1125) (yinc 825)
@@ -22,7 +23,7 @@
 
 (define MY-TOKEN-24-SPEC '((file "MyTokenSpec-0.png") (cardw 115) (cardh 115)
 			   (xmin 50) (ymin 50) (xinc 117) (yinc 117)
-			   (bleed 0) (radi 1) (xlim 750) (ylim 525))) 
+			   (bleed 0) (radi 1) (xlim 750) (ylim 525) (save #f))) 
 
 (define (Project proj . base)
   (make-environment
@@ -43,6 +44,9 @@
 	 (ndim (car pxi))
 	 (pxary (cadr pxi)))
     (if (> ndim 3) (vector-ref pxary 3) -1)))
+
+(def-para-get para-get-page-name "page-name")
+(def-para-set para-set-page-name "page-name")
 
 ;; (define tt (Templ spec))
 ;;
@@ -92,6 +96,8 @@
     (def-slot corner-radius (+ radi bleed))
     (def-slot xoff corner-radius)	; pixel to test for is-card-at
     (def-slot yoff corner-radius)	; pixel to test for is-card-at
+    (def-slot save #t)			; change with (enable-save-template val)
+    (def-slot save-template-enabled save)
 
     (define (info) (list file project::PROJECT-DIR LAST-ILXY open-ilxy))
     (define is-portrait? (< cardw cardh)) ; template-orientation
@@ -110,7 +116,7 @@
     (set! LAST-ILXY (set-end-of-template))
     
     (define msg-ctt #f)
-    ;; put-card
+    ;;  get-empty-ilxy, card-to-this-ilxy & save-if-template-full
     (define (card-to-template image layer undo context)
       ;; image to next open slot, updating LAST-ILXY
       (and msg-ctt (message-string1 "ctt-0:" image layer undo context))
@@ -119,7 +125,7 @@
       (and msg-ctt (message-string1 "ctt-2:" LAST-ILXY))
       (and undo (gimp-image-undo-group-start image)) ; mark for undo
       (card-to-this-ilxy image LAST-ILXY context)    ;
-      (save-if-template-full)		; TRY THIS! eager save when template is full
+      (save-if-template-full)			     ; save now, if template IS full
       (and undo (gimp-image-undo-group-end image))
       (and msg-ctt (message-string "ctt-3: LAST-IXY" LAST-ILXY))
       )
@@ -205,8 +211,7 @@
 	  (open-ilxy-func templ given-file)
 	(or (and (not given-file) use-backfill (backfill-ilxy)) ; try use backfill-ilxy
 	    ;; get ilxy of a NEW template image
-	    (let* ((filepath (string-append project::TEMPLATE-DIR file))
-		   (image (next-template-file-image filepath)) ; -N+1.png
+	    (let* ((image (open-template-file-image #f)) ; -N+1.png
 		   (layer (image-base-layer image))
 		   (ilxy (list image layer xmin ymin))
 		   )
@@ -301,11 +306,12 @@
     
     ;; FILE stuff:
 
+    ;; .../project/publish/Template-XX-0.png [N > 0] or #f
     (define last-template-filename #f)
     ;; make a new, empty template image (&layer)
-    ;; when invoked with a filename, it is likely filename-0.png [the zeroth/original template file]
+    ;; when invoked with a filename, it is likely "filename-0.png" [the zeroth/original template file]
     ;; if filename == #f, then proceed to *next* incremental filename [max++]
-    (define (next-template-file-image file) ; .../dir2/dir1/card-name-N.png or #t
+    (define (open-template-file-image given-file) ; .../dir2/dir1/Template-XX-N.png [N == 0] or #f
       ;; Extract -N.png and use -N+1.png
       ;; file name MUST end with "-N" (this image/file now "filled" with cards)
       ;; find/open version named "-0" [template-0.png, MyMiniCards18-0.png]
@@ -313,55 +319,46 @@
       ;; protection during debug
       (define (quit-on-limit n lim) (if (> n lim) (throw (stringifyf "quit-on-limit" n ">" lim))))
 
-      (let* ((filename (or file last-template-filename))
-	     (rslash (reverse (strbreakup filename DIR-SEPARATOR))) ; card-name-N.png dir1 dir2 ...
-	     (name-dot-type (strbreakup (car rslash) "."))	    ; (card-name-N png)
+      (let* ((filename (or given-file last-template-filename filepath))
+	     (rslash (reverse (strbreakup filename DIR-SEPARATOR))) ; Template-XX-N.png dir1 dir2 ...
+	     (name-dot-type (strbreakup (car rslash) "."))	    ; (Template-XX-N png)
 	     (dot-type (string-append "." (nth 1 name-dot-type)))   ; .png
-	     (name-num (strbreakup (car name-dot-type) "-"))	    ; (card name N)
-	     (num-names (reverse name-num))			    ; (N name card)
-	     (basename (unbreakupstr (reverse (cdr num-names)) "-")) ; card-name
+	     (name-num (strbreakup (car name-dot-type) "-"))	    ; (Template XX N)
+	     (num-names (reverse name-num))			    ; (N XX Template)
+	     (basename (unbreakupstr (reverse (cdr num-names)) "-")) ; Template-XX
 	     (new-num (+ 1 (string->number (car num-names))))	     ; N+1
 	     (num-str (number->string new-num))			     ;"N+1"
 	     ;;(xxx (quit-on-limit new-num 10))
-	     (oname (string-append basename "-" num-str dot-type)) ; cards-N+1.png
-	     (cname (string-append project::TEMPLATE-DIR "/" oname )) ; TEMPLATE-DIR/cards-N+1.png
+	     (nname (string-append basename "-" num-str dot-type)) ; Template-XX-N+1.png
+	     (cname (string-append project::PUB-DIR "/" nname ))   ; PUB-DIR/Template-XX-N+1.png
 	   
-	     ;; open ${basename}-0.${type} and set next filename:
-	     (name-0 (string-append basename "-0" dot-type))  ; card-name-0.png
-	     (temslash (reverse (cons name-0 (cdr rslash))))  ; (... dir2 dir1 card-name-0.png)
-	     (template (unbreakupstr temslash DIR-SEPARATOR)) ;  .../dir2/dir1/card-name-0.png
-	     (image (car (gimp-file-load RUN-NONINTERACTIVE template oname)))
-	     (layer (image-base-layer image))
-	     (rename (gimp-image-set-filename image cname))
+	     ;; open templ::filepath and set next filename
+	     (image (car (gimp-file-load RUN-NONINTERACTIVE filepath nname))) ; blank template
+	     (rename (gimp-image-set-filename image cname))		      ; save to PUB-DIR
 	     (display (car (gimp-display-new image))) ; which display/tab shows image
 	     )
-	(set! last-template-filename template) ; save new filename
-	(para-set-comment image oname)	       ; the short name
-	(para-set-display image display)       ; record Display
-	;;(message-string "next-template-file-image:" image layer display cname)
+	(set! last-template-filename cname) ; save new filename: PUB-DIR/Template-XX-N+1.png
+	(para-set-page-name image (or (para-get-global-pubname) basename)) ; last set page name
+	(para-set-comment image nname)	    ; the short name
+	(para-set-display image display)    ; record Display
+	;;(message-string "open-template-file-image:" image (image-base-layer image) display cname)
 	image))
-
-    (define msg-save-if-full #f)
-    (define (set-msg-save-if-full val) (set! msg-save-if-full val))
 
     ;; either repeated (card-to-template...) OR explicit 'flush' by caller, with ((car alt) = #t)
     ;; return (car (is-template-full? LAST-ILXY)) [Mar 2022]
     (define (save-if-template-full . arg)
       ;; Save template associated with LAST-ILXY [exported API]
       ;; save IFF (XOR full? alt?)
-      (and msg-save-if-full (message-string "save-if-template-full0: arg=" agr LAST-ILXY))
-      (if (equal? TRUE (car (gimp-image-is-valid (car LAST-ILXY)))) ; ie: NOT immediately after (set-end-of-template)
+      (and msg-save-if-full (message-string "save-if-template-full0: arg=" arg LAST-ILXY))
+      (if (equal? TRUE (car (gimp-image-is-valid (car LAST-ILXY))))
+	  ;; ie: NOT immediately after (set-end-of-template)
 	  (let ((full? (car (apply is-template-full? LAST-ILXY)))
-		(alt? (if (pair? arg) (car arg) #f))) ; (util-opt-arg arg #f)
+		(alt? (util-opt-arg arg #f))) ; (if (pair? arg) (car arg) #f))) ; 
 	    (and msg-save-if-full (message-string "save-if-template-full1: " full? alt? arg))
 	    (if (or (and full? (not alt?)) (and alt? (not full?)))
 		(save-template LAST-ILXY) ; returns cname
 	      )
 	    )))
-
-    ;; set to #f to prevent writing of any template
-    (define save-template-enabled #t) 
-    (define (enable-save-template value) (set! save-template-enabled))
 
     (define (save-template ilxy)
       ;; save given image (now ~full of cards) to filename-N.png:
@@ -370,30 +367,40 @@
       (when save-template-enabled
 	(let* ((image (nth 0 ilxy))
 	       (layer (nth 1 ilxy))
-	       (cname (car (gimp-image-get-filename image))) ; TEMPLATE-DIR/template-name-N.png
-	       (oname (util-file-basename cname))	     ; template-name-N.png
-	       (pname (or (para-get-global-pubname) oname)) ; "Homes" or #f; set by card-set-page-name: (0 page "Name")
-	       (sname (rename-to-dir project::PUB-DIR oname pname))  ; PUB-DIR/pname-N.png
-	       (xname (rename-to-dir project::XCF-DIR oname pname "xcf"))
+	       (cname (car (gimp-image-get-filename image))) ; PUB-DIR/template-name-N.png
+	       (nname (util-file-basename cname)) ; template-name-N.png [para-get-comment]
+	       (pname (para-get-page-name image)) ; "Name" (0 page "Name") or "Template-XX"
+	       (sname (if pname
+			  (rename-to-dir nname project::PUB-DIR pname) ; PUB-DIR/Pname-N.png
+			cname))					       ; PUB-DIR/Tname-N.png
+	       (xname (rename-to-dir nname project::XCF-DIR pname "xcf"))
 	       (mode RUN-NONINTERACTIVE))
-	  (message-string "save-template publish:" sname oname)
+	  (message-string "save-template publish:" sname nname)
 	  (para-set-comment image pname)
-	  (file-png-save-defaults mode image layer sname oname) ; save .PNG in PUB-DIR
-	  (gimp-xcf-save          mode image layer xname oname) ; save .XCF in XCF-DIR
+	  (gimp-file-save mode image layer sname nname) ; save .PNG/.JPG in PUB-DIR
+	  (gimp-xcf-save  mode image layer xname nname) ; save .XCF in XCF-DIR
 	  cname
 	  )))
 
-    (define (rename-to-dir dir oname pname . ext)
-      ;; change directory and basename, retain "-N.png"
-      ;; oname: basename-n.ext
-      ;; pname: newname
-      ;; return DIR/newname-n.ext
-      (let* ((name-dot-type (strbreakup oname "."))			    ; (file-name-N png)
-	     (name-num (strbreakup (car name-dot-type) "-"))		    ; (file name N)
-	     (num (car (reverse name-num)))				    ; N
+    (define (rename-to-dir nname dir pname . ext)
+      ;; change directory, basename, maybe ext: retain "-N" or "-N.png"
+      ;; nname: basename-N.png
+      ;; pname: new Pubname
+      ;; return DIR/Pubname-n.ext
+      (let* ((name-dot-type (strbreakup nname "."))	     ; (file-name-N png)
+	     (name-num (strbreakup (car name-dot-type) "-")) ; (file name N)
+	     (num (car (reverse name-num)))		     ; N
 	     (type (if (pair? ext) (car ext) (car (reverse name-dot-type))))) ; "png" or [ext]
 	(string-append dir pname "-" num "." type)))
-    
+
+    (define force-display-template #t)
+    (define (set-force-display val) (set! force-display-template val))
+
+    (define msg-save-if-full #t)
+    (define (set-msg-save-if-full val) (set! msg-save-if-full val))
+
+    ;; set to #f to prevent writing of any template
+    (define (enable-save-template value) (set! save-template-enabled))
 
     ))
 

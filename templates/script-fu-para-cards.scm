@@ -165,11 +165,12 @@
     (and msg-file-save (message-string "file-merge-and-save1" toplayer filename cardname))
     (gimp-file-save RUN-NONINTERACTIVE image toplayer filename cardname)
     (and msg-file-save (message-string "file-merge-and-save2" toplayer filename cardname))
-    (gimp-image-clean-all image)	; try tell GIMP to not bark about un-saved image!
+    (and try-clean-image (gimp-image-clean-all image)) ; tell GIMP to not bark about un-saved image!
     (and msg-file-save (message-string "file-merge-and-save3" toplayer filename cardname))
     (para-set-comment image cardname)
     ))
-  
+
+(define try-clean-image #f)
 
 (define (card-image cardname)
   ;; look for an open image with basename(image) = cardname
