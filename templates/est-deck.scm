@@ -29,7 +29,8 @@
 
 ;; CARD-SAVE-PNG? [so can DO-GIMP, but not save file? for testing?]
 
-(define DO-GIMP #t) ; #t: do GIMP image generation, #f: Just write cardinfo files (set by sf-make-deck/info)
+(define RAW-SPECS #f)			; no generation, just write specs to ${deck}.ts
+(define DO-GIMP #f) ; #t: do GIMP image generation, #f: Just write cardinfo files (set by sf-make-deck/info)
 (define CARD-SCALE .5)		     ; scale when write PNG [template always uses full-scale image]
 
 (define DO-INFO #t)		     ; #t: write info to typescript class file
@@ -69,7 +70,7 @@
 
 (define (do-citymap) (est-setup citymap-templ  #t #f #t #t))
 (define (do-estates) (est-setup estates-templ #f #t #f #f))
-(do-estates)
+(do-citymap)
  
 (define CARD-LOOP #t)		   ; #f to stop generation loops [tends to kill script-fu/GIMP]
 (define CIRCLE-IMAGE-SIZE 125)     ; [for Debt & House Tokens]
@@ -131,6 +132,39 @@
 (def-para-get para-get-alt-template "alt-template")
 
 (gimp-message "card define CARD functions")
+
+;;; 'RED -> (239 32 60) -> '(rgb 239 32 60) -> JSONify -> "rgb(239,32,60)"
+(define (rgbc sym) (cons 'rgb sym))
+
+(define (bound? sym)
+  (catch #f (let () (eval sym) #t) #f ))
+
+(define extras nil) ;; ensure there is a binding
+(define color RED) ;; ensure there is a binding
+(define title "title") ;; ensure there is a binding
+(define text nil) ;; ensure there is a binding
+
+;;; emit original card-spec:
+(macro (raw-specs syms-rest)
+  (let* ((syms (cdr syms-rest)))
+    `(ifgimp `(#f 2)
+	     ;; bind/rebind a few symbols:
+	     (let* ((filen (util-assq 'filen extras title))
+		    (color (rgbc color)))
+	       (message-string1 "raw-specs: extras=" extras)
+	       (message-string1 "raw-specs: JSON=" (stringify extras 'JSON))
+	       (card-write-info filen (syms-to-alist ,@syms))))
+    ))
+
+(macro (raw-spec0 syms-rest)
+  (let* ((syms (cdr syms-rest)))
+    `(ifgimp `(#f 2)
+	     ;; bind/rebind a few symbols:
+	     (let* ((filen (util-assq 'filen extras title))
+		    (color (rgbc color)))
+	       (stringify (list filen (syms-to-alist ,@syms)) 'JSON)))
+    ))
+
 ;; size/orientation of a given CARD:
 (define (card-width image)  (car (gimp-image-width image)))
 (define (card-height image) (car (gimp-image-height image)))
@@ -855,30 +889,57 @@
   )
 
 
+(define (format-extras extras)
+  (let* ((rv (make-vector (length extras))) (nc 0))
+    (carloop extras
+      (lambda (extra)
+	(let* ((key (car extra))
+	       (args (list->vector (cdr extra))))
+	  (if msg-set-extras (message-string1 "card-set-extra:" key args))
+	  (vector-set! rv nc `(,key ,args))
+	  (set! nc (+ 1 nc))
+	  )))
+    rv)
+  )
+
+(define msg-format-extras #t)
+(define (format-extras extras)
+  (let* ((rv (make-vector (length extras))) (nc 0))
+    (carloop extras
+      (lambda (extra)
+	(let* ((key (car extra))
+	       (args (list->vector (cdr extra))))
+	  (if msg-format-extras (message-string1 "format-extras:" key args))
+	  (vector-set! rv nc (list->vector extra))
+	  (set! nc (+ 1 nc))
+	  )))
+    rv)
+  )
+
 (define msg-set-extras #f)
 (define (card-set-extras image extras)
   ;;(message-string1 "card-set-extras" image extras)
   ;; extras: ( (key1 arg11 arg12) (key2 arg21 arg22) ...)
   (carloop extras
-	   (lambda (extra)
-	     (let* ((key (car extra))
-		    (args (cdr extra)))
-	       (if msg-set-extras (message-string1 "card-set-extra:" key args))
-	       (case key
-		 ((text)  (apply card-make-text-layer-and-tweak image args)) ; with tweaks
-		 ((text-low) (apply card-set-text-low image args))	     ; with tweaks
-		 ((line)  (apply card-set-line image args))
-		 ((image) (apply card-set-image image args))
-		 ((coin)  (apply card-set-big-coin image args))
-		 ((fill)  (apply card-set-fill image args))
-		 ((step)  (apply card-set-step image args))
-		 ((vp)    (apply card-set-vp image args)) ; args: (value (size N) (color C))
-		 ((ext)   (apply card-set-ext image args))
-		 ((subtype) (apply card-set-type image (car args) '(lineno 1) (cdr args))) ; on second line
-		 ((cardProps))		; nothing at this time
-		 ((filen))		; nothing at this time
-		 (else (message-string1 "Unknown Extra:" key args))
-		 )))))
+    (lambda (extra)
+      (let* ((key (car extra))
+	     (args (cdr extra)))
+	(if msg-set-extras (message-string1 "card-set-extra:" key args))
+	(case key
+	  ((text)  (apply card-make-text-layer-and-tweak image args)) ; with tweaks
+	  ((text-low) (apply card-set-text-low image args))	     ; with tweaks
+	  ((line)  (apply card-set-line image args))
+	  ((image) (apply card-set-image image args))
+	  ((coin)  (apply card-set-big-coin image args))
+	  ((fill)  (apply card-set-fill image args))
+	  ((step)  (apply card-set-step image args))
+	  ((vp)    (apply card-set-vp image args)) ; args: (value (size N) (color C))
+	  ((ext)   (apply card-set-ext image args))
+	  ((subtype) (apply card-set-type image (car args) '(lineno 1) (cdr args))) ; on second line
+	  ((cardProps))		; nothing at this time
+	  ((filen))		; nothing at this time
+	  (else (message-string1 "Unknown Extra:" key args))
+	  )))))
 
 (define (card-set-page-name name . rest)
   ;; use name for future page(s), maybe force to new page
@@ -920,7 +981,7 @@
     (let ((nreps 1) (type "Back")
 	  (cost (card-scale (card-width image)))
 	  (step (card-scale (card-height image))))
-      (card-write-info filen (syms-to-alist nreps type name cost step)))
+      (card-write-info filen (syms-to-alist nreps type name cost step text)))
     image-layer
     ))
 
@@ -1043,7 +1104,9 @@
      ))
   )
 
+(define msg-type-dir #t)
 (define (card-type-dir nreps name . args)
+  (and msg-type-dir (message-string1 "card-type-dir" nreps name args))
   ;; Identify Direction Restrictions: name containing "[NESW]"
   (define (bar-size)
     (let ((ce templ::bleed)		; 0 or 25 (remove bleed, inset to visible area)
@@ -1086,38 +1149,41 @@
   ;; -------------------
   
   (let* ((type (util-opt-arg args "Direction")) ; or "Blocked"
-	 (block? (not (equal? type "Direction")))
-	 (band (get-dot-band))
-	 (image-layer (card-make-base #t GREY band band))
-	 (image (car image-layer))
-	 (layer (cadr image-layer))
-	 (cardw (min templ::cardw templ::cardh)) ; (template-width #t)?
-	 (bleed templ::bleed)
-	 (bars (bar-size))
-	 (fontn DIR-TYPE-FONT)
-	 (mar 5)
-	 (safew (- cardw bleed bleed bars bars mar mar)) ; working-width
-	 ;; shink text (SW) to fit width:
-	 (size (card-shrink-font-for-width safew name 400 fontn))
-	 ;;(msg (message-string1 "card-type-dir" name size))
-	 (height (card-text-layer-height name size fontn))
-	 (white-size (- (card-height image) band band))
-	 ;; center y direction:
-	 (ny (+ band (/ (- white-size height) 2)))
-	 (nx 'center)
 	 (filen (string-append type "-" name))
-	 (ext (if (<= (string-length name) 1) "Base" "Dir"))
-	 )
-
-    (card-set-title image name `(filen ,filen)) ; override filename
-    (card-make-text-layer image name nx ny CENTER size fontn BLACK nil)
-    (dir-bar image name block?)
-    (card-set-type image type `(lineno .3))
-    (card-set-ext image ext)		; "Base" OR "Dir"
-    (let ((name filen) (subtype name))
-      (card-write-info filen (syms-to-alist nreps type name subtype)))
-    image-layer)
-  )
+	 (ext (if (<= (string-length name) 1) "Base" "Dir")))
+    (ifgimp 
+     (let* ((block? (not (equal? type "Direction")))
+	    (band (get-dot-band))
+	    (image-layer (card-make-base #t GREY band band))
+	    (image (car image-layer))
+	    (layer (cadr image-layer))
+	    (cardw (min templ::cardw templ::cardh)) ; (template-width #t)?
+	    (bleed templ::bleed)
+	    (bars (bar-size))
+	    (fontn DIR-TYPE-FONT)
+	    (mar 5)
+	    (safew (- cardw bleed bleed bars bars mar mar)) ; working-width
+	    ;; shink text (SW) to fit width:
+	    (size (card-shrink-font-for-width safew name 400 fontn))
+	    (msg (and msg-type-dir (message-string1 "card-type-dir" name size)))
+	    (height (card-text-layer-height name size fontn))
+	    (white-size (- (card-height image) band band))
+	    ;; center y direction:
+	    (ny (+ band (/ (- white-size height) 2)))
+	    (nx 'center)
+	    )
+       (card-set-title image name `(filen ,filen)) ; override filename
+       (card-make-text-layer image name nx ny CENTER size fontn BLACK nil)
+       (dir-bar image name block?)
+       (card-set-type image type `(lineno .3))
+       (card-set-ext image ext)		; "Base" OR "Dir"
+       (let ((name filen) (subtype name))
+	 (card-write-info filen (syms-to-alist nreps type name subtype ext))
+       image-layer))
+     (let* ((name filen) (subtype name))
+       (and msg-type-dir (message-string1 "card-type-dir" filen nreps type name subtype ext))
+       (card-write-info filen (syms-to-alist nreps type name subtype ext))))
+    ))
 
 ;; pseudo card for an auction-mat:
 (define (card-type-auction nreps name cost1 cost2 color)
@@ -1281,6 +1347,8 @@
 (define msg-type-event #f)
 (define (card-type-event nreps type title color text . extras) ; [cost text2 ((ext ?) (step ?) ...)]
   (if msg-type-event (message-string1 "card-type-event" type title color extras))
+  (if msg-type-event (message-string1 "card-type-event" (syms-to-alist nreps type title color text extras)))
+  (if RAW-SPECS (raw-specs filen nreps type title color text extras)
   (let* ((cost	(util-opt-arg extras nil)) ; positional arg 
 	 (text2 (util-opt-arg extras nil)) ; positional arg 
 	 (ext   (util-assq 'ext extras (if (equal? type "Event") "Event" "Policy")))
@@ -1298,15 +1366,18 @@
        (card-set-extras image extras) 	; set text, text-low, coin, step, vp...
        ;;(set!-eval-sym color)
        image-layer)
-     (let ((name title) (props (cardprops extras)))
-       (card-write-info filen (syms-to-alist nreps type name cost step subtype ext props)))
+     (let ((name title) (props (cardprops extras)) (textLow text2))
+       (card-write-info filen (syms-to-alist nreps type name cost step subtype ext props text textLow)))
      )))
+    )
 
 (define msg-type-tile #f)
 ;;(12 residential [BROWN] "Residential" "Housing" nil nil "*" 2 "Cost VP Rent\n2 House 1   0" )
 (define (card-type-tile nreps type title color cost step stop rent text . extras)
   (if msg-type-tile (message-string1 "card-type-tile" type color title cost step stop rent text extras))
-  (let* ((filen (util-assq 'filen extras title))
+  (if RAW-SPECS (raw-specs nreps type title color cost step stop rent text extras)
+    (let* ((text2 (util-opt-arg extras nil)) ; positional arg 
+	 (filen (util-assq 'filen extras title))
 	 (ext   (util-assq 'ext extras "Base"))
 	 (subtype (util-assq 'subtype extras nil))
 	 (vp (util-assq 'vp extras nil))) ; get the vp value
@@ -1322,17 +1393,19 @@
        (card-set-text image text)
        (card-set-extras image extras)
        image-layer)
-     (let ((name title) (props (cardprops extras))) ;  (step step)
-       (card-write-info filen (syms-to-alist nreps type name cost step stop rent vp subtype ext props)))
+     (let ((name title) (props (cardprops extras)) (textLow text2)) ;  (step step)
+       (card-write-info filen (syms-to-alist nreps type name cost step stop rent vp subtype ext props text textLow)))
      )))
+  )
+
     
 (define msg-type-home #f)
 (define (card-type-home nreps type title color cost step stop rent bgcolor)
   (if msg-type-home (message-string1 "card-type-home:" type title color cost step stop rent bgcolor))
-  (let* ((text ())
-	 (colos (stringifyf bgcolor))	       ; assert bgcolor is SYMBOL: 'RED -> "RED"
+  (if RAW-SPECS (raw-specs nreps type title color cost step stop rent bgcolor)
+  (let* ((colos (stringifyf bgcolor))	       ; assert bgcolor is SYMBOL: 'RED -> "RED"
 	 ;; convert GIMP color to CSS color in stringify
-	 (rgbColor (cons 'rgb (eval bgcolor))) ; 'RED -> '(rgb 239 32 60) -> JSONify -> "rgb(239,32,60)"
+	 (bgColor (rgbc bgColor)) ; 'RED -> '(rgb 239 32 60) -> JSONify -> "rgb(239,32,60)"
 	 (vp 1)
 	 (filen (string-append "Home-" colos)))
     (ifgimp
@@ -1344,17 +1417,19 @@
        (card-set-image image "Home.png" 86 238 360 371) ; filename x y new-width new-height
        (card-set-extras image `((vp ,vp)))
        image-layer)
-     (let* ((name filen) (ext "Base") (props `((rgbColor ,rgbColor))) (subtype "Home"))
+     (let* ((name filen) (ext "Base") (props `((rgbColor ,bgColor))) (subtype "Home"))
        (card-write-info filen (syms-to-alist nreps type name cost step stop rent vp subtype ext props)))
      )))
+  )
 
 
 ;; (12 cirlce "House" "house"	2 () () 0 () (vp  1) (image "House0.png") (cardProps (noStop #t)))
 ;; (1  circle "Debt"  "Debt"   () () () () () (cardProps (noStop #t)))
 (define msg-type-circle #f)
-(define (card-type-circle nreps title type color cost step stop rent text . extras)
+(define (card-type-circle nreps title type color cost step stop rent text . extras) ; no text!
   ;; note that args are TITLE(name) *then* TYPE(types) 
   (if msg-type-circle (message-string1 "card-type-circle:" type title color cost step stop rent text extras)) 
+  (if RAW-SPECS (card-write-info (util-assq 'filen extras title) (syms-to-alist nreps type title color cost step stop rent text extras))
   ;; use cost to print the cost? [vs (image "House0.png")]
   (let* ((colos (symbol->string color))	; assert bgcolor is SYMBOL: 'RED -> "RED"
 	 (filen (util-assq 'filen extras title))
@@ -1397,6 +1472,7 @@
        (card-write-info filen (syms-to-alist nreps type name cost step stop rent vp subtype props)))
      )
     ))
+  )
 
 (define (card-type-square nreps title type color cost step stop rent text . extras)
   ;; note that args are TITLE(name) *then* TYPE(types) 
@@ -1431,7 +1507,7 @@
        image-layer)
      (if msg-type-circle (message-string1 "card-type-square:" 'image-layer= image-layer filen type title color))
      (let ((name filen) (props `((noStop #t))))
-       (card-write-info filen (syms-to-alist nreps type name cost step stop rent)))
+       (card-write-info filen (syms-to-alist nreps type name cost step stop rent text)))
      )
     ))
 
@@ -1505,7 +1581,7 @@
       nil))
 
 ;;; return image-layer
-(define msg-make-one #f)
+(define msg-make-one #t)
 (define (card-make-one-card card-spec)
   (message-string1 "card-make-one-card" (stringify card-spec))
   ;; card-spec: (nreps 'type "title" ... )
@@ -1530,28 +1606,28 @@
            (name (nth 2 card-spec))
            (args (cdddr card-spec))     ; (nthcdr 3 card-spec) == (rest)
            ;;
-           ;; (msg (message-string1 "card-make-one-card" 'nreps= nreps 'types= types 'name= name 'args= args))
+           (msg (and msg-make-one (message-string1 "card-make-one-card" 'nreps= nreps 'types= types 'name= name 'args= args)))
            (image-layer
             (case type
               ;; tiles:
-              ((home)       (apply card-type-home nreps types name BROWN args))
+              ((home)       (apply card-type-home nreps types name BROWN args)) ; cost step stop rent bgcolor
               ((circle)     (apply card-type-circle nreps name args)) ; name types COLOR args [not types="circle"]
               ((square)     (apply card-type-square nreps name args)) ; name types COLOR args [not types="circle"]
-              ((res)        (apply card-type-tile nreps types name GREEN args))
-              ((com)        (apply card-type-tile nreps types name BROWN args))
+              ((res)        (apply card-type-tile nreps types name GREEN args)) ; cost step stop rent text . extras
+              ((com)        (apply card-type-tile nreps types name BROWN args)) ; extras: line, (image...), ... ?
               ((fin)        (apply card-type-tile nreps types name BROWN args))
               ((ind)        (apply card-type-tile nreps types name BROWN args))
               ((mun)        (apply card-type-tile nreps types name BROWN args))
               ((gov)        (apply card-type-tile nreps types name PURPLE args))
 	      ((blank)      (apply card-type-tile nreps types name BROWN args))
               ;; events & policy: args = color title text [cost] [text-below]
-              ((deferred)   (apply card-type-event nreps types name args))
+              ((deferred)   (apply card-type-event nreps types name args)) ; text . extras
               ((event)      (apply card-type-event nreps types name args))
               ((future)     (apply card-type-event nreps types name args))
               ((temp)       (apply card-type-event nreps types name args))
               ((policy)     (apply card-type-event nreps types name args))
               ;;
-              ((road)       (apply card-type-road nreps types name args))
+              ((road)       (apply card-type-road nreps types name args)) ; cost spec . args
 
               ;; DOTS: "NAME-value" COLOR value
               ((mov)        (apply card-type-move nreps name args))
@@ -1568,8 +1644,9 @@
               ((deck)       (message-string "MAKE DECK:" args) `(#f 0)) ; ignore, spec0 used by card-deck-name
               (else (message-string1 "unknown type=" type args) '(#f 0))
               ))
-           (image (car image-layer))    ; image or #f
-           (layer (cadr image-layer))	; layer or page-name
+	   (xxx (and msg-make-one (message-string "make-card-image: image-layer:" image-layer)))
+           (image (when image-layer (car image-layer)))    ; image or #f
+           (layer (when image-layer (cadr image-layer)))   ; layer or page-name
            )
       (and msg-make-one (message-string "make-card-image: MADE" image layer))
       (when image (card-process-one-image image nreps)) ; unless (page) or (deck) or (not DO-GIMP)
@@ -3040,15 +3117,15 @@
 
 (define ALIGN-DECK
   #((0 deck "AlignDeck" "align-deck")	; name of object in js/ts
-    (1 road "Shift-R" () (RR RR RR RR))
-    (1 road "Shift-L" () (RL RL RL RL))
+    (1 road "Rotate-R" () (RR RR RR RR))
+    (1 road "Rotate-L" () (RL RL RL RL))
     ))
 
 (define MISC-ROADS
   #((0 deck "MiscRoads" "misc-roads")	      ; name of object in js/ts
     ;; Toroidial Alignments:
-    (1 road "Shift-R" () (RR RR RR RR))
-    (1 road "Shift-L" () (RL RL RL RL))
+    (1 road "Rotate-R" () (RR RR RR RR))
+    (1 road "Rotate-L" () (RL RL RL RL))
 
     (1 road "Diag-L" () (RL RR RL RR))
     (1 road "Diag-R" () (RR RL RR RL))
@@ -3221,25 +3298,25 @@
 	  (catch t (card-make-deck deck))
 	  (set! CARD-DISPLAY? orig-display)))
       
-      ;; ELSE just make the full deck:
-      (cond
-       ((equal? deck-str "ALL")
-	(for-each card-make-deck-with-file
-		  (list DOTS-DECK DIR-DECK ALIGN-DECK HOME-DECK TOKEN-DECK   ; special backs
-			FILL-DECK TILE-DECK EVENT-DECK POLICY-DECK TECH-DECK ROAD-DECK TRANSIT-DECK ; City-Back
-			BACK-DECK HOME-BACK
-			)))
-       ((equal? deck-str "CARDS")
-	(for-each card-make-deck-with-file
-		  (list HOME-DECK					     ; special backs
-			TILE-DECK EVENT-DECK POLICY-DECK TECH-DECK ROAD-DECK ; City-Back
-			)))
-       ((equal? deck-str "HORIZ")
-	(for-each card-make-deck-with-file
-		  (list EVENT-DECK POLICY-DECK)))
-       (else
-	(card-make-deck-with-file (eval (string->symbol deck-str)))))
-      )
+    ;; ELSE just make the full deck:
+    (cond
+     ((equal? deck-str "ALL")
+      (for-each card-make-deck-with-file
+		(list DOTS-DECK DIR-DECK ALIGN-DECK HOME-DECK TOKEN-DECK ; special backs
+		      FILL-DECK TILE-DECK EVENT-DECK POLICY-DECK TECH-DECK ROAD-DECK TRANSIT-DECK ; City-Back
+		      BACK-DECK HOME-BACK
+		      )))
+     ((equal? deck-str "CARDS")
+      (for-each card-make-deck-with-file
+		(list HOME-DECK						     ; special backs
+		      TILE-DECK EVENT-DECK POLICY-DECK TECH-DECK ROAD-DECK   ; City-Back
+		      )))
+     ((equal? deck-str "HORIZ")
+      (for-each card-make-deck-with-file
+		(list EVENT-DECK POLICY-DECK)))
+     (else
+      (card-make-deck-with-file (eval (string->symbol deck-str)))))
+    )
   )
 
 (define (card-get-aux) (message-string1 "orig aux") #())
@@ -3333,6 +3410,10 @@
 	 SF-DRAWABLE "Input Drawable (layer)" 0)
 
 (sf-reg-file "delete-all-images"   "Del Images" "delete image if able" "" )
+
+
+(define line (vector-ref TILE-DECK 7))
+(define extras (list-tail line 8))
 
 
 (gimp-message "est-deck loaded")

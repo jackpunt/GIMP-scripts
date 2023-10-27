@@ -53,6 +53,9 @@
           )
     )
 
+  (define (string_nl str)
+    (unbreakupstr (strbreakup str "\n") "\\n"))
+
   (define (string->buffer str)
     (if (< size max_size)
 	(buffer-append str)))
@@ -131,16 +134,16 @@
         (let ((ndx 0) (len (vector-length obj)))
           (buffer-append  "[ ")
 	  (while (< ndx len)
-		 ;; unquote is not seen inside #()
-		 ;; `(#(1 2 ,three 4)) => ( [1 2 (unquote three) 4 ])
-		 ;; so we detect it here, and extract the SYMBOL, and present to JSON unquoted:
-		 (let* ((val0 (vector-ref obj ndx))
-			(qot (if (and (pair? val0) (eq? (car val0) 'unquote)) #f #t))
-			(val (if qot val0 (cadr val0))))
-		   (jval->buffer val qot ) ; non-terminal values not supported! (pairfunc)
-		   (set! ndx (+ 1 ndx))
-		   (buffer-append (if (< ndx len) ", " ""))
-		   ))
+	    ;; unquote is not seen inside #()
+	    ;; `(#(1 2 ,three 4)) => ( [1 2 (unquote three) 4 ])
+	    ;; so we detect it here, and extract the SYMBOL, and present to JSON unquoted:
+	    (let* ((val0 (vector-ref obj ndx))
+		   (qot (if (and (pair? val0) (eq? (car val0) 'unquote)) #f #t))
+		   (val (if qot val0 (cadr val0))))
+	      (jval->buffer val qot ) ; non-terminal values not supported! (maybe supply pairfunc?)
+	      (set! ndx (+ 1 ndx))
+	      (buffer-append (if (< ndx len) ", " ""))
+	      ))
 	  (buffer-append " ]")
 	  )))
 
@@ -176,7 +179,7 @@
         (let* ((key (car obj)) (val (cdr obj)) (len (length val)))
 	  (display (stringifyf "jpair(" key " : "  val ")  len=" len "\n"))
 	  (buffer-append (if (= n 0) "" ", ")) ; adjacent to initial "{"
-	  (if (pair? key)
+	  (if (kvpair? key)
 	      (begin
 		(jval->buffer (keyN n) #f) ; nullstr not used
 		(buffer-append " : ")	   ;
@@ -196,7 +199,7 @@
     ;; Note TS/JSON key is not quoted
     (set! pairfunc (if (null? pairfunc) jtail->buffer (car pairfunc)))
     (define (quote? str)
-      (string->buffer (if QUOTE (string-append "\"" str "\"") str)))
+      (string->buffer (if QUOTE (string-append "\"" (string_nl str) "\"") str)))
       
     (cond ((null? obj)   (string->buffer "null"))
           ((symbol? obj) (string->buffer (quote? (symbol->string obj))))
@@ -215,16 +218,18 @@
     )
   (define (keyN n) (string-append "key" (number->string n)))
 
+  (define (key? elt) (or (symbol? elt) (string? elt)))
+  (define (kvpair? obj) (and (pair? obj) (key? (car obj)) (= 2 (length obj))))
+
   (define (kvlist->buffer obj n)
     (display (string-append "kvlist:" (stringify obj) "\n"))
-    (let* ((nul "undefined") (kvlist kvlist->buffer))
-      (define (key? elt) (or (symbol? elt) (string? elt)))
-      (define (kvpair? pair) (and (key? (car pair)) (= 2 (length pair))))
-      (define (kvpair->buffer kvpair)
+    (let* ((nul "undefined")
+	   (kvlist kvlist->buffer))
+      (define (kvpair->buffer kvpair)	; ambient (n)
 	(display (string-append "kvpair: car=" (stringify (car kvpair)) "  cdr=" (stringify (cdr kvpair)) "\n"))
 	(buffer-append (if (= n 0) "" ", "))
 	(jval->buffer (car kvpair) #f kvlist)  ; key is not quoted, ASSERT: pairfunc not used
-	(buffer-append ": ")		       ;
+	(buffer-append ": ")		   ;
 	(jval->buffer (cadr kvpair) #t kvlist) ; quote string, symbol-name, back here for lists
 	)
       (define (elt->buffer elt)
@@ -280,7 +285,7 @@
   (cond
    (TS?    (jval->buffer obj #t kvlist->buffer)) ; QUOTE=#f, TS?  =t
    (JSON?  (jval->buffer obj #t kvlist->buffer)) ; QUOTE=#f, JSON?=t
-   (QUOTE  (obj->buffer obj "()"))		 ; QUTOE=#t, GIMP/TinyScheme form of nil
+   (QUOTE  (obj->buffer obj "()"))		 ; QUOTE=#t, GIMP/TinyScheme form of nil
    (else   (tail->buffer obj)))			 ; 
 
   (buffer->string)
