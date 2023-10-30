@@ -23,7 +23,7 @@
     (card-write-info "policy" (syms-to-alist title extras))
     ))
 
-(define (acte spec)
+(define (acte card-spec)
   (let* ((nreps (abs (nth 0 card-spec))) ; (< (nth 0 card-spec) 0) for non-templated 'cards'
 	 (type (nth 1 card-spec)) (types (type-string type))
 	 (name (nth 2 card-spec))
@@ -31,10 +31,21 @@
 	 )
     (apply card-type-event nreps types name args)))
 
-(set! msg-raw-specs #t)
-(set! msg-make-one #t)
-(set! msg-write-info #t)
-;;(set! msg-type-home #t)
+(define h3 (vector-ref HOME-DECK 3))
+(define (acth spec)
+  (let* ((nreps (abs (nth 0 spec)))	; (< (nth 0 card-spec) 0) for non-templated 'cards'
+	 (type (nth 1 spec)) (types (type-string type))
+	 (name (nth 2 spec))
+	 (args (list-tail spec 3))	; (nthcdr 3 card-spec) == (rest)
+	 )
+    (apply card-type-home nreps types name BROWN args))) ; color is evaluated...
+
+
+(define (raws color spec)
+  (let* ((title (nth 3 spec))
+	 (extras (list-tail spec 7))
+	 (filen title))
+    (macro-expand `(raw-specs '(title color extras)))))
 
 (define debug-script #t)
 (gimp-message "debug-script loaded")

@@ -153,7 +153,7 @@
 	 (begin 
 	   ;; bind/rebind a few symbols:
 	   (and msg-raw-specs (message-string0 "raw-specs: title=" title "color=" color "extras=" extras))
-	   (let* ((color (rgbc color))
+	   (let* ((color (if (symbol? color) (rgbc (eval color)) (rgbc color)))
 		  (extras (format-extras extras)))
 	     (and msg-raw-specs (message-string0 "raw-specs: format-extras=" extras))
 	     (and msg-raw-specs (message-string0 "raw-specs: extras-JSON=" (stringify extras 'JSON)))
@@ -1408,7 +1408,7 @@
   (if msg-type-home (message-string1 "card-type-home:" type title color cost step stop rent bgcolor))
   (let* ((colos (stringifyf bgcolor))	       ; assert bgcolor is SYMBOL: 'RED -> "RED"
 	 ;; convert GIMP color to CSS color in stringify
-	 (bgColor (rgbc bgColor)) ; 'RED -> '(rgb 239 32 60) -> JSONify -> "rgb(239,32,60)"
+	 (bgColor (rgbc bgcolor)) ; 'RED -> '(rgb 239 32 60) -> JSONify -> "rgb(239,32,60)"
 	 (vp 1)
 	 (filen (string-append "Home-" colos)))
     (raw-specs (nreps type title color cost step stop rent bgcolor)
@@ -1424,7 +1424,6 @@
      (let* ((name filen) (ext "Base") (props `((rgbColor ,bgColor))) (subtype "Home"))
        (card-write-info filen (syms-to-alist nreps type name cost step stop rent vp subtype ext props)))
      )))
-  (if msg-type-home (message-string1 "card-type-home2:" 'done))
   )
 
 
@@ -3420,6 +3419,10 @@
 (sf-reg-file "delete-all-images"   "Del Images" "delete image if able" "" )
 
 (require "templates/debug-script" debug-script)	; misc code while debugging
+(set! msg-raw-specs #t)
+(set! msg-make-one #t)
+(set! msg-write-info #t)
+;;(set! msg-type-home #t)
 
 (gimp-message "est-deck loaded")
 
