@@ -13,6 +13,7 @@
 
 (gimp-message "require.scm loaded")
 
+;;; copied from script-fu.init:
 (define *handlers* (list))
 
 (define (push-handler proc)

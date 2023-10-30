@@ -131,7 +131,8 @@
 ;;; K-V lookup
 ;;; (util-assq key list [default]) -> value or [default or #f]
 (macro (util-assq form)
-  (let ((key (cadr form)) (lis (caddr form))
+  (let ((key (cadr form))
+	(lis (caddr form))
 	(els (if (pair? (cdddr form)) (cadddr form) #f)))
     `(let ((v (assq ,key ,lis)))
        (if v (cadr v) ,els))))

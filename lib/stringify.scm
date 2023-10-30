@@ -38,6 +38,8 @@
               (buffer-add str)
               ))))
            
+  (define (buffer-appendN . strs) (for-each buffer-append strs))
+
   (define (obj->buffer obj nullstr)	;return string or buffer
     ;; NEW: always push to buffer, ignore return value.
     (cond ((null? obj) (string->buffer nullstr))
@@ -152,57 +154,12 @@
 	  (buffer-append " ]")
 	  )))
 
-  (define (jtail->buffer obj n) ;; return buffer or #f
-    ;; put series of "nth" jpair->buffer, creating keyN as necessary
-    ;;(display (stringifyf "jtail->buffer:" obj n " "))
-    (if (< size max_size) ; or use (while ...) to iterate vs recurse
-        (begin
-          (cond
-           ((pair? obj)
-	    (let* ((first (car obj)) (rest (cdr obj)))
-	      (display (stringifyf "first =" first "  rest="rest "\n"))
-	      (if (pair? first)
-		  (begin		    ; (xx (a 1) (b 2))  vs (x 1)
-		    (jpair->buffer first n) ; although: if (pair? (cadr first)) then ...?
-		    (jtail->buffer rest (+ 1 n))
-		    )
-		  (if (> (length rest) 0)
-		      (jpair->buffer (cons first (list rest)) n)
-		      (jpair->buffer (list (keyN n) first) n))
-		  )
-	      ))
-	   ((null? obj)
-	    ;;(display "\n")
-	    )
-           (else			;(... . X) --> (... . (list keyN X))
-            (jpair->buffer (list (keyN n) obj) n)
-            ))
-	  )))
-
-  (define (jpair->buffer obj n)		; obj is (list car cadr)
-    (if (< size max_size)
-        (let* ((key (car obj)) (val (cdr obj)) (len (length val)))
-	  (display (stringifyf "jpair(" key " : "  val ")  len=" len "\n"))
-	  (buffer-append (if (= n 0) "" ", ")) ; adjacent to initial "{"
-	  (if (pair? key)
-	      (begin
-		(jval->buffer (keyN n) #f) ; nullstr not used
-		(buffer-append " : ")	   ;
-		(jvec->buffer (list->vector obj))) ; pair is not a kvpair ==> send list as vector (jval-vec)!
-	      (begin			   ;
-		(jval->buffer key #f)	   ; key should never be null?: string OR symbol
-		(buffer-append ": ")	   ;
-		(if (= (length val) 1)	   ; key : val  OR key : {  }
-		    (jval->buffer (car val) #t)
-		    (jval->buffer val #t)
-		    )))
-          )))
-
   (define (keyN n) (string-append "key" (number->string n)))
 
-  (define (key? elt) (or (symbol? elt) (string? elt)))
+  (define (key? elt) (or (symbol? elt))) ;  (string? elt)
   (define (kvpair? obj) (and (pair? obj) (key? (car obj)) (= 1 (length (cdr obj)))))
   (define jval-vec #f)
+  (define dual-vec #f)
 
   (define (jval->buffer obj QUOTE . pairfunc)
     ;; put a [right-side] key:string|symbol or [left-side] val:any
@@ -211,9 +168,10 @@
     (set! pairfunc (if (null? pairfunc) jpair->buffer (car pairfunc)))
     (define (quote? str)
       (string->buffer (if QUOTE (string-append "\"" (string_nl str) "\"") str)))
-
-    (display "jval->buffer" obj (eq? pairfunc jpair->buffer) (eq?  pairfunc kvlist->buffer))
-      
+    
+    (display "jval->buffer" obj  (cond ((eq? pairfunc jpair->buffer) "jpair->buffer")
+				       ((eq? pairfunc jlist->buffer) "jlist->buffer")))
+    
     (cond ((null? obj)   (string->buffer "null"))
           ((symbol? obj) (string->buffer (quote? (symbol->string obj))))
 	  ((string? obj) (string->buffer (quote? obj)))
@@ -222,55 +180,95 @@
 	  ((equal? obj #t) (obj->buffer 'true "true"))
 	  ((equal? obj #f) (obj->buffer 'false "false"))
 	  ((rgba-color? obj) (string->buffer (rgba->string obj)))
-          ((pair?  obj)
-	   (if (and jval-vec (not (kvpair? obj))) (jvec->buffer (list->vector obj))
-	   (begin
-	     (buffer-append "{") (display (buffer->string) "\n") (newline)
-	     (pairfunc obj 0) 		; pairfunc: kvlist->buffer (OR jpair->buffer)
-	     (buffer-append "}") (display "}") (newline))
-	   )
-	  )
-          (else              (string->buffer "???"))
-          )
-    )
-  ;; pairfunc to format as an Object: {k0: v0, k1: v1, ...}
+          ((pair?  obj)      (pairfunc obj 0))
+	  (else
+	   (display "jval->buffer: else" (stringify obj) )(newline)
+	   (string->buffer "???"))
+          ))
 
-  (define (kvlist->buffer obj n)
-    (display (string-append "kvlist:" (stringify obj))) (newline)
-    (let* ((nul "undefined")
-	   (kvlist kvlist->buffer))
-      (define (kvpair->buffer kvpair)	; ambient (n)
-	(display (string-append "kvpair: car=" (stringify (car kvpair)) "  cdr=" (stringify (cdr kvpair)) "\n"))
+  ;; default pairfunc to format list/pair (key . val) as:    {keyN: [key, ...vals]} OR {sym: ,val} OR {sym: val}
+  ;; (key . val) ==> {key: [...val]}  or [key, ...val]  (OR { keyN: [key, ...vals] }
+  (define (jpair->buffer obj n)		; obj is (list car cadr)
+    (if (< size max_size)
+        (let* ((key (car obj)) (val (cdr obj)) (len (length val)))
+	  (display (stringifyf "jpair->buffer: key=" key ", val=" val ", len=" len ", n=" n)) (newline)
+	  (buffer-append (if (= n 0) "" ", ")) ; adjacent to initial "{"
+	  (buffer-append "{") (display (buffer->string)) (newline)
+	  (if (not (symbol? key))
+	      (begin			   ; strange case...
+		(display (stringifyf "jpair->buffer.strange case: n=" n ", obj=" obj)) (newline)
+		(jval->buffer (keyN n) #f) ; nullstr not used
+		(buffer-append " : ")	   ;
+		(jval->buffer (list->vector obj) #t)) ; pair is not a kvpair ==> send list as vector (jval-vec)!
+	    (begin			   ;
+	      (display (stringifyf "jpair->buffer.normal: key=" key ", val=" val "len=" len)) (newline)
+	      (jval->buffer key #f)	   ; key should never be null?: symbol (OR string)
+	      (buffer-append ": ")	   ;
+	      (if (= (length val) 1)	   ; key : val  OR key : {  }
+		  (jval->buffer (car val) #t) ; QUOTE ???
+		(jval->buffer val #t)
+		)))
+	  (buffer-append "}") (display "}") (newline))
+      ))
+
+  ;; pairfunc to ouput as vector: ((a 1) b (c any) [] ) ==> [{a: 1}, b, {c: any}, []]
+  (define (json-vec pair n)			; [{a: 1}, b, {c: 2}, {d: [...]} ]
+    (buffer-append (if (= n 0) "" ", ")) ; adjacent to initial "{"
+    (jval->buffer (list->vector pair) #t)
+  )
+
+  (define (kvlist? obj)
+    (define (not-kvp? elt) (not (and (pair? elt) (symbol? (car elt)) (< (length (cdr elt)) 2))))
+    ;; TODO: confirm each key is unique!
+    (and (pair? obj) (not (find not-kvp? obj))) ; true if all elt of obj are kvp?
+    )
+
+
+  ;; pairfunc to format list/pair as an Object: {k0: v0, k1: v1, ...}
+  ;; suitable for '((a 1) (b 2) ... (z 30)) ==> {a: 1, b: 2, ... z: 30}   simple/ideal case.
+  ;; ((a 1) b (c 2) (d [x1 x2 x2]) ) ==> {a: 1, key1: b, d: [...])  OR [{a: 1}, b, {c: 2}, {d: [...]} ]
+  ;; ( a b c d) ==> [a, b, c, d] OR {key1: a, key2: b, key3: c, key4: d}
+  ;; ((a 1) ("foo" 3)) ==> {a: 1, key1: ["foo", 3] }
+
+
+  (define (jlist->buffer obj n)
+    (display "jlist->buffer:" (stringify obj)) (newline)
+    (let* ((nul "undefined"))
+
+      ;; add k:v pair to current object: { ... , k: v, ...}
+      (define (emit-inline elt)		; ambient (n)
+	(display "elt: car=" (stringify (car elt)) "  cdr=" (stringify (cdr elt)) "\n")
 	(buffer-append (if (= n 0) "" ", "))
-	(jval->buffer (car kvpair) #f)  ; key (symbol|string) is not quoted, ASSERT: pairfunc not used
-	(buffer-append ": ")		   ;
-	(jval->buffer (cadr kvpair) #t kvlist) ; quote string, symbol-name, back here for lists
-	)
+	(jval->buffer (car elt) #f) ; key (symbol|string) is not quoted, ASSERT: pairfunc not used
+	(buffer-append ": ")	    ;
+	(jval->buffer (cadr elt) #t jlist->buffer)) ; quote string, symbol-name, recurse to here for lists
+
       (define (elt->buffer elt)
 	(display (string-append "elt->buffer: elt=" (stringify elt))) (newline)
 	(cond
 	 ((null? elt))
-	 ;;((and (pair? elt) (null? (cdr elt))) ; dotted pair!? ((x (...))) ; ((x (...)) . ())
-	 ;; (jpair->buffer (list (car elt) (cdr elt)) n))
 	 ((pair? elt)			; kvpair? (sym val) or unnamed obj? ((..) ...)
 	  (let ((len (length elt)))	; no dotted pair allowed...
 	    (cond
-	     ((= len 0) (kvpair->buffer (list (keyN n) nul))) ; ((kv) (kv) () (kv))
-	     ((= len 1) (kvpair->buffer (cons (keyN n) elt))) ; (list (keyN n) (car elt)), kn:"val"
-	     ((kvpair? elt) (kvpair->buffer elt))	      ; (k val)   => , k: val
-	     ((key? (car elt))				      ; (k (...)) => , k: {...}
-	      (kvpair->buffer (list (car elt) (cdr elt))))    ; the Trick! coerce to named-list ['list' not 'cons']
+	     ((= len 0) (emit-inline (list (keyN n) nul))) ; ((kv) (kv) () (kv))
+	     ((= len 1) (emit-inline (cons (keyN n) elt))) ; (list (keyN n) (car elt)), kn:"val"
+	     ((kvpair? elt) (emit-inline elt))		   ; (k val)   => , k: val
+	     ((key? (car elt))				   ; (k (...)) => , k: {...}
+	      (emit-inline (list (car elt) (cdr elt))))	   ; the Trick! coerce to named-list ['list' not 'cons']
 	     (else			; malformed KV element! (complex key) kn: {...}
-	      (kvpair->buffer (list (keyN n) elt)))
+	      (emit-inline (list (keyN n) elt)))
 	     )))
-	 (else (kvpair->buffer (list (keyN n) elt)))) ; kn: { }
+	 (else (emit-inline (list (keyN n) elt)))) ; kn: { }
 	(set! n (+ 1 n)))
 
+
+      (buffer-append "{")
       (cond
-       ((kvpair? obj) (kvpair->buffer obj))		    ; (k v) (elt->buffer obj)
+       ((kvpair? obj) (emit-inline obj))		    ; (k v) (elt->buffer obj)
        ((key? (car obj))				    ; (k (...)) => , k: {...} (elt->buffer obj)
-	(kvpair->buffer (list (car obj) (list->vector (cdr obj))))) ; (k: [...])
+	(emit-inline (list (car obj) (list->vector (cdr obj))))) ; (k: [...])
        (else (for-each elt->buffer obj)))		    ; actual list of: ((K V)(K V)...)
+      (buffer-append "}")
       ))
 
 
@@ -304,11 +302,11 @@
   (set-args args)
  
   (define (stringify0 obj . args)
-    (set-args args)
+    (set-args args) 			; set TS? JSON? QUOTE
     (buffer-reset)
     (cond
-     (TS?    (jval->buffer obj #t kvlist->buffer)) ; QUOTE=#f, TS?  =t
-     (JSON?  (jval->buffer obj #t kvlist->buffer)) ; QUOTE=#f, JSON?=t
+     (TS?    (jval->buffer obj #t jlist->buffer)) ; QUOTE=#f, TS?  =t
+     (JSON?  (jval->buffer obj #t jlist->buffer)) ; QUOTE=#f, JSON?=t
      (QUOTE  (obj->buffer obj "()"))		   ; QUOTE=#t, GIMP/TinyScheme form of nil
      (else   (tail->buffer obj)))			 ; 
     (buffer->string))
@@ -323,6 +321,10 @@
 
 (define (stringifyf . args) (stringify args '%))
   
+(define (message-string0 . args)
+  ;; unquote all
+  (gimp-message (stringify args)))
+
 (define (message-string . args)
   ;; unquote all
   (gimp-message (stringify args '%)))
