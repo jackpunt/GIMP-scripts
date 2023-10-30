@@ -615,9 +615,9 @@
     ;; card-set-text is not given any "tweak" (unless embedded in text)
     (card-make-text-layer image text 'center top CENTER size font BLACK nil)))
 
-(define (card-set-text-low image text . tweaks)
+(define (card-set-textLow image text . tweaks)
   ;; horizontal bar and text at bottom of card (above BOTTOM-BAND)
-  ;;(message-string1 "card-set-text-low" image text tweaks)
+  ;;(message-string1 "card-set-textLow" image text tweaks)
   (when (pair? text)
     (set! tweaks (cdr text))
     (set! text (car text)))
@@ -931,7 +931,7 @@
 	(if msg-set-extras (message-string1 "card-set-extra:" key args))
 	(case key
 	  ((text)  (apply card-make-text-layer-and-tweak image args)) ; with tweaks
-	  ((text-low) (apply card-set-text-low image args))	     ; with tweaks
+	  ((textLow) (apply card-set-textLow image args))	     ; with tweaks
 	  ((line)  (apply card-set-line image args))
 	  ((image) (apply card-set-image image args))
 	  ((coin)  (apply card-set-big-coin image args))
@@ -1307,7 +1307,7 @@
 	 (ext    "Roads")
 	 (props `(,@action ,@oprops))
 	 )
-    (raw-specs (nreps type title cost subtype ext props color ext )
+    (raw-specs (nreps type title cost subtype ext props color )
     (ifgimp
      (let* ((image-layer (card-make-base #t color band band))
 	    (image (car image-layer))
@@ -1375,8 +1375,8 @@
      (let* ((image-layer (card-generic #f type title color cost text `(filen ,filen)))
 	    (image (car image-layer))
 	    (layer (cadr image-layer)))
-       (card-set-text-low image text2)
-       (card-set-extras image extras) 	; set text, text-low, coin, step, vp...
+       (card-set-textLow image text2)
+       (card-set-extras image extras) 	; set text, textLow, coin, step, vp...
        ;;(set!-eval-sym color)
        image-layer)
      (let ()
@@ -2099,7 +2099,7 @@
     (if msg-high-tech (message-string1 "high-tech" name subtype filter filen))
     `(1 ind ,name    "9+" 2 "*3*" "2*" "+1 Value Token\n(max 6)\n\n* + $1 per Value Token"
 	(vp 1) (subtype ,subtype)
-	(text-low "+ $1 Rent to Com/Res in Range:2\n+ $2 Cost for other High Tech")
+	(textLow "+ $1 Rent to Com/Res in Range:2\n+ $2 Cost for other High Tech")
 	,@filen
 	(ext "High Tech")
 	(cardProps
@@ -2154,13 +2154,13 @@
 		 (else (dist (add -1))))
 	 ))
 
-    (4 ind "Construction"     1 0 2 1 "+1 Build" (text-low "- $2 on any Build.\nNot less than 1")
+    (4 ind "Construction"     1 0 2 1 "+1 Build" (textLow "- $2 on any Build.\nNot less than 1")
        (subtype "Build")
        (cardProps
 	(onStep (builds (add 1)))
 	(onBuild (buildAdjust (add -2) (min 1) (filter (onCard #t) )))))
 
-    (4 ind "Warehouse"     2 1 1 1 "+1 Build" (text-low "Owner:\n- $2 to Build\nCommercial adjacent.\nNot less than 1")
+    (4 ind "Warehouse"     2 1 1 1 "+1 Build" (textLow "Owner:\n- $2 to Build\nCommercial adjacent.\nNot less than 1")
        (subtype "Build")
        (cardProps
 	(onStep (builds (add 1)))
@@ -2168,7 +2168,7 @@
 	 (buildAdjust (add -2) (min 1) (filter (onCard #t) (isOwner #t) (range 1) (type "Commercial"))))))
 
     ;; TODO code for "dynamic range" based on Owner's ((VP+Props)/10)
-    (4 ind "Heavy Equipment"    4 2 2 2 "+1 Build" (text-low "Owner:\n- $2 to Build Transit\nNot less than 1")
+    (4 ind "Heavy Equipment"    4 2 2 2 "+1 Build" (textLow "Owner:\n- $2 to Build Transit\nNot less than 1")
        (subtype "Build")
        (cardProps
 	(onStep (builds (add 1)))
@@ -2176,7 +2176,7 @@
 			      (filter (onCard #t) (isOwner #t) (subtype "Transit"))))))
 
     ;; industrial, commercial, transit, gov [and anything new]
-    (4 ind "Factory"     6 3 2 3 "+1 Build" (text-low "Owner:\n- $2 to Build\nnon-Res/Muni\nNot less than 1")
+    (4 ind "Factory"     6 3 2 3 "+1 Build" (textLow "Owner:\n- $2 to Build\nnon-Res/Muni\nNot less than 1")
        (subtype "Build")
        (cardProps
 	(onStep (builds (add 1)))
@@ -2186,22 +2186,22 @@
 		      (filter (onCard #t) (isOwner #t) (not (type #("Residential" "Municipal"))))))))
     
     ;; Comercial Buy/Attack
-    (4 com "Restaurant" 3 -1 1 1 "+1 Buy" (text-low "-1 Distance (min 1)\nwhen leaving.") (image ())
+    (4 com "Restaurant" 3 -1 1 1 "+1 Buy" (textLow "-1 Distance (min 1)\nwhen leaving.") (image ())
        (subtype "Bar")
        (cardProps
 	(onStep (buys (add 1)))
 	(onMove (dist (add -1) (min 1)))))
-    (4 com "Bar"        4 -1 2 1 "+1 Buy" (text-low "-1 Distance\nwhen leaving.") (image () center 288 118 187)
+    (4 com "Bar"        4 -1 2 1 "+1 Buy" (textLow "-1 Distance\nwhen leaving.") (image () center 288 118 187)
        (subtype "Bar")
        (cardProps
 	(onStep (buys (add 1)))		; implicit (min 0)
 	(onMove (dist (add -1)))))
-    (4 com "Night Club" 5 -1 2 2 "+1 Buy" (text-low "-2 Distance\nwhen leaving.")
+    (4 com "Night Club" 5 -1 2 2 "+1 Buy" (textLow "-2 Distance\nwhen leaving.")
        (subtype "Bar")
        (cardProps
 	(onStep  (buys (add 1)))
 	(onMove (dist (add -2)))))	; implict "not less than 0"
-    (4 com "Casino"     6 -2 2 2 "+1 Buy" (text-low "Distance = 1\nwhen leaving.") (image () center 320)
+    (4 com "Casino"     6 -2 2 2 "+1 Buy" (textLow "Distance = 1\nwhen leaving.") (image () center 320)
        (subtype "Bar")
        (cardProps
 	(onStep (buys (add 1)))
@@ -2215,19 +2215,19 @@
        (cardProps
 	(onStep (dist (add -1)))
 	))
-    (3 com "Law Office" 3 -1 1 2 "+1 Policy" (text-low "- $3 on Policy actions.")
+    (3 com "Law Office" 3 -1 1 2 "+1 Policy" (textLow "- $3 on Policy actions.")
        (subtype "Shop") (ext "Policy")
        (cardProps
 	(onStep (polis (add 1)))
 	(onBuild
 	 (costAdjust (add -3) (filter (onCard #t) (type "Policy")))) ; triggered by onStop, subject = Player
 	))
-    (4 com "Cineplex"   4 -1 2 2 () (text-low "-1 Distance\nwhen leaving.") ; ~ "Bar"
+    (4 com "Cineplex"   4 -1 2 2 () (textLow "-1 Distance\nwhen leaving.") ; ~ "Bar"
        (image () fit top nil xs)
        (subtype "Shop")
        (cardProps
 	(onMove (dist (add -1)))))
-    (4 com "Dept Store" 5 -1 3 1 "+1 Buy" (text-low "-2 Distance\nwhen leaving.") ; ~ "Night Club"
+    (4 com "Dept Store" 5 -1 3 1 "+1 Buy" (textLow "-2 Distance\nwhen leaving.") ; ~ "Night Club"
        (subtype "Shop")
        (cardProps
 	(onStep (buys (add 1)))
@@ -2238,7 +2238,7 @@
 	(stop 4)
 	(onStop (saveDir reverseDir)) ; this["saveDirMall"] = {"N":"S", "S":"N", "E":"W", "W":"E"}[dir:string]
 	(onMove (moveDir (set saveDir))))) ; (whenon ...)? or (on leaving ...); Place a DIR="X" card on dir pile
-    (3 com "Stadium"    7 -2 5 2 () (text-low "-2 Distance\nwhen leaving.") (subtype "Municipal") (image ())
+    (3 com "Stadium"    7 -2 5 2 () (textLow "-2 Distance\nwhen leaving.") (subtype "Municipal") (image ())
        (cardProps
 	(onMove (dist (add -2)))))
 
@@ -2248,7 +2248,7 @@
     ;; MUNI: 
     ;; Maybe Commercial?
     (4 mun "Plaza"      3 0 0 1 "-2 Distance" (image ())
-       (text-low "+ $1 Rent, + $1 Wages\nfor adjacent Commercial")
+       (textLow "+ $1 Rent, + $1 Wages\nfor adjacent Commercial")
        (cardProps
 	(onStep (dist (add -2)))
 	(onBuild (rentAdjust (add 1) (filter (range 1) (type "Commercial")))
@@ -2257,26 +2257,26 @@
 
     ;; PARKS & Recreation
     (4 mun "Playground" 2 -1 0 0 "-1 Distance" (image () fit)
-       (text-low "+ $1 Rent adj Residential") (subtype "Park")
+       (textLow "+ $1 Rent adj Residential") (subtype "Park")
        (cardProps
 	(onStep (dist (add -1)))
 	(onBuild (rentAdjust (add 1) (filter (range 1) (type "Residential"))))
 	))
     (4 mun "Park"       4  0 0 1 "-1 Distance" (image () fit) (vp 1)
-       (text-low "+ $1 Rent adj Properties") (subtype "Park")
+       (textLow "+ $1 Rent adj Properties") (subtype "Park")
        (cardProps
 	(rent 0)			; because is self-adjacent, will be "1"
 	(onStep (dist (add -1)))
 	(onBuild (rentAdjust (add 1) (filter (range 1))))
 	))
     (4 mun "School"     5  1 1 1 "-1 Distance"
-       (text-low "+ $1 Rent adj Residential")  (image () fit center nil xs) (vp 1)
+       (textLow "+ $1 Rent adj Residential")  (image () fit center nil xs) (vp 1)
        (cardProps
 	(onStep (dist (add -1)))
 	(onBuild (rentAdjust (add 1) (filter (range 1) (type "Residential"))))
 	))
     (4 mun "Lake"       7 () () () "Distance = 1" (subtype "Park") ; not adjacent to other Transit !?
-       (text-low "+ $2 Rent\nfor adjacent Properties") (image () fit) (vp 2)
+       (textLow "+ $2 Rent\nfor adjacent Properties") (image () fit) (vp 2)
        (text "No Stopping" center 300 CENTER 50 TEXTFONT RED (bold #t))
        (cardProps
 	(step 0) (stop 0) (rent 0) (noStop #t) ; cannot be rented, do show show a rentCounter
@@ -2287,7 +2287,7 @@
     ;; GOV
     ;;
     (2 gov "Jail"       1 -1  "0*"  1 "* -1 Buy   \n-1 Build\n-1 Move\n-1 Policy"
-       (text-low "-1 Range\nCollect no Rent.") (vp 1)
+       (textLow "-1 Range\nCollect no Rent.") (vp 1)
        (cardProps (stop 0)
 		  (onStop
 		   (dist (set 0)) (buys (add -1)) (builds (add -1)) (moves (add -1)) (polis (add -1))
@@ -2297,14 +2297,14 @@
 		  (onMove (noRent (set #f))) ; stopOn()/payRent() checks player.noRent 
 		  ;; pro'ly the other player should pay Rent to the City (to support your stay in Jail)
 		  ))
-    (4 gov "County Recorder" 3 0  0  1 "+1 Buy\n+1 Build\n+1 Range" (text-low "- $3 on Build") (vp 1)
+    (4 gov "County Recorder" 3 0  0  1 "+1 Buy\n+1 Build\n+1 Range" (textLow "- $3 on Build") (vp 1)
        (cardProps
 	(onStep (buys (add 1)) (builds (add 1)) (rangeAdjustTurn (add 1)))
 	(onBuild
 	 (buildAdjust (add -3) (filter (onCard #t))))
 	)) 
     (4 gov "Enterprise Zone" 4 0  2  1 "+1 Buy\n+1 Build"
-       (text-low "- $1 to Build\nadjacent Property.\n+ $1 Rent on adjacent\nnon-Residential Property.") (vp 1)
+       (textLow "- $1 to Build\nadjacent Property.\n+ $1 Rent on adjacent\nnon-Residential Property.") (vp 1)
        (cardProps
 	(rent 0)			; will self-adjust to 1
 	(onStep (buys (add 1)) (builds (add 1)))
@@ -2312,7 +2312,7 @@
 		 (rentAdjust (add 1) (filter (range 1) (not (type "Residential")))))
 	))
 
-    (1 gov "Court House"     5 0  0  1 "+1 Buy\n+1 Build" (text-low "+1 Policy\n- $3 on Policy actions") (vp 2)
+    (1 gov "Court House"     5 0  0  1 "+1 Buy\n+1 Build" (textLow "+1 Policy\n- $3 on Policy actions") (vp 2)
        (ext "Policy")
        (cardProps ;; buys, draws, buys, builds, polis reset each turn.
 	(onStep (buys (add 1)) (builds (add 1)))
@@ -2322,8 +2322,8 @@
 	 (costAdjust (add -3) (filter (onCard #t) (type "Policy"))))
 	))
     ;; *-text means: onStop [implemented as onBuild (onCard #t)
-    ;; text-low impicitly means: "while player is on this tile"  (onCard #t)
-    (1 gov "City Hall"       6 0 "*" 1 "* +1 Buy  \n+1 Range" (text-low "+1 Policy\n- $3 on Policy actions") (vp 2)
+    ;; textLow impicitly means: "while player is on this tile"  (onCard #t)
+    (1 gov "City Hall"       6 0 "*" 1 "* +1 Buy  \n+1 Range" (textLow "+1 Policy\n- $3 on Policy actions") (vp 2)
        (ext "Policy")
        (cardProps
 	(stop 0)
@@ -2379,7 +2379,7 @@
 	))
     ;; Transit Hub: may buy another Move
     (4 com "Transit Hub" 6 -1 "1*" 1 "-1 Distance\n*May pay $3 to Move\nnext Distance\nin chosen Direction." (vp 1)
-       (text-low "- $2 to Build\nadjacent Transit") ; pay, pick dir, discover distance
+       (textLow "- $2 to Build\nadjacent Transit") ; pay, pick dir, discover distance
        (subtype "Com-Transit")
        (ext "Transit")
        (cardProps
@@ -2413,7 +2413,7 @@
     (4 mun "Airport"	 8 0 () "1*"	; "Continue in Direction\nto next Airport"
        ("Go to next Airport.\nDistance = 1\n\n*To each Airport\npay $1 + $1 per range\nto destination."
 	(size 45)) (image ()) (vp "*")
-       (text-low "*VP = {5, 3, 1, 0}" (size 45))
+       (textLow "*VP = {5, 3, 1, 0}" (size 45))
        (subtype "Transit")
        (ext "Transit")
        (cardProps
