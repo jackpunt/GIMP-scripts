@@ -134,7 +134,7 @@
 (gimp-message "card define CARD functions")
 
 ;;; 'RED -> (239 32 60) -> '(rgb 239 32 60) -> JSONify -> "rgb(239,32,60)"
-(define (rgbc sym) (cons 'rgb sym))
+(define (rgbc sym) (cons 'rgb (if (symbol? sym) (eval sym) sym)))
 
 (define (bound? sym)
   (catch #f (begin (eval sym) #t) #f ))	; works but logs in GIMP console
@@ -153,7 +153,7 @@
 	 (begin 
 	   ;; bind/rebind a few symbols:
 	   (and msg-raw-specs (message-string0 "raw-specs: title=" title "color=" color "extras=" extras))
-	   (let* ((color (if (symbol? color) (rgbc (eval color)) (rgbc color)))
+	   (let* ((color (rgbc color))
 		  (extras (format-extras extras)))
 	     (and msg-raw-specs (message-string0 "raw-specs: format-extras=" extras))
 	     (and msg-raw-specs (message-string0 "raw-specs: extras-JSON=" (stringify extras 'JSON)))
@@ -1357,10 +1357,11 @@
 	 (ext   (util-assq 'ext extras (if (equal? type "Event") "Event" "Policy")))
 	 (step  (util-assq 'step extras 1))
 	 (filen (card-xname title type extras)) ; filen-type
-	 (subtype (util-assq 'subtype extras nil)))
+	 (subtype (util-assq 'subtype extras nil))
+	 (name title) (props (cardprops extras)) (textLow text2))
     (set! extras `((ext ,ext) (step ,step) ,@extras))
-    (if msg-type-event (message-string1 "card-type-event" type title color cost text text2 extras))
-    (raw-specs (nreps type title color text extras)
+    (if msg-type-event (message-string1 "card-type-event" type title color cost text textLow extras))
+    (raw-specs (nreps type name color cost step subtype ext props text textLow extras)
     (ifgimp
      (let* ((image-layer (card-generic #f type title color cost text `(filen ,filen)))
 	    (image (car image-layer))
@@ -1369,7 +1370,7 @@
        (card-set-extras image extras) 	; set text, text-low, coin, step, vp...
        ;;(set!-eval-sym color)
        image-layer)
-     (let ((name title) (props (cardprops extras)) (textLow text2))
+     (let ()
        (card-write-info filen (syms-to-alist nreps type name cost step subtype ext props text textLow)))
      )))
     )
@@ -1382,11 +1383,12 @@
 	 (filen (util-assq 'filen extras title))
 	 (ext   (util-assq 'ext extras "Base"))
 	 (subtype (util-assq 'subtype extras nil))
-	 (vp (util-assq 'vp extras nil))) ; get the vp value
+	 (vp (util-assq 'vp extras nil)) ; get the vp value
+	 (name title) (props (cardprops extras)) (textLow text2))
     (set! extras `((ext ,ext) ,@extras))
     (if (equal? subtype "Transit") (set! color TRANSIT-COLOR))
     (if (equal? subtype "Com-Transit") (set! color COM-TRANSIT-COLOR))
-    (raw-specs (nreps type title color cost step stop rent text extras)
+    (raw-specs (nreps type name color cost step stop rent vp subtype ext props text textLow extras)
 
     (ifgimp
      (let* ((image-layer (card-generic #t type title color cost () `(filen ,filen)))
@@ -1396,7 +1398,7 @@
        (card-set-text image text)
        (card-set-extras image extras)
        image-layer)
-     (let ((name title) (props (cardprops extras)) (textLow text2)) ;  (step step)
+     (let () ;  (step step)
        (card-write-info filen (syms-to-alist nreps type name cost step stop rent vp subtype ext props text textLow)))
      ))
     )
@@ -1410,8 +1412,9 @@
 	 ;; convert GIMP color to CSS color in stringify
 	 (bgColor (rgbc bgcolor)) ; 'RED -> '(rgb 239 32 60) -> JSONify -> "rgb(239,32,60)"
 	 (vp 1)
-	 (filen (string-append "Home-" colos)))
-    (raw-specs (nreps type title color cost step stop rent bgcolor)
+	 (filen (string-append "Home-" colos))
+	 (name filen) (ext "Base") (props `((rgbColor ,bgColor))) (subtype "Home"))
+    (raw-specs (nreps type name color cost step stop rent vp subtype ext props bgcolor)
     (ifgimp
      (let* ((image-layer (card-generic #t type title color cost () `(filen ,filen)))
 	    (image (car image-layer))
@@ -1421,7 +1424,7 @@
        (card-set-image image "Home.png" 86 238 360 371) ; filename x y new-width new-height
        (card-set-extras image `((vp ,vp)))
        image-layer)
-     (let* ((name filen) (ext "Base") (props `((rgbColor ,bgColor))) (subtype "Home"))
+     (let ()
        (card-write-info filen (syms-to-alist nreps type name cost step stop rent vp subtype ext props)))
      )))
   )
@@ -1445,9 +1448,10 @@
 	 (costs (if (number? cost) (number->string cost) #f))
 	 (costColor BLACK)		;
 	 (vp (util-assq 'vp extras nil))
+	 (name filen) (props `((noStop #t)))
 	 )
     (if msg-type-circle (message-string1 "card-type-circle: PRE-GIMP" filen type title size cost vp))
-    (raw-specs (nreps type title color cost step stop rent text extras)
+    (raw-specs (nreps type title color cost step stop rent vp subtype props text extras)
     (ifgimp
      (let* ((image-layer (card-make-base-image size size radius )) ; size = 250
 	    (image (car image-layer))
@@ -1472,7 +1476,7 @@
        ;;(para-set-alt-template image "token-templ")	; indicate special template
        image-layer)
      (if msg-type-circle (message-string1 "card-type-circle:" 'image-layer= image-layer filen type title))
-     (let ((name filen) (props `((noStop #t))))
+     (let ()
        (card-write-info filen (syms-to-alist nreps type name cost step stop rent vp subtype props)))
      )
     ))
@@ -1489,6 +1493,7 @@
 	 (filen (util-assq 'filen extras (string-append title "-" colos)))
 	 (size SQUARE-IMAGE-SIZE)	;
 	 (radius 1)			; 0-radius: square
+	 (name filen) (props `((noStop #t)))
 	 )
     (if msg-type-circle (message-string1 "card-type-square: PRE-GIMP" filen type title color))
     (ifgimp
@@ -1510,7 +1515,7 @@
 	      ))
        image-layer)
      (if msg-type-circle (message-string1 "card-type-square:" 'image-layer= image-layer filen type title color))
-     (let ((name filen) (props `((noStop #t))))
+     (let ()
        (card-write-info filen (syms-to-alist nreps type name cost step stop rent text)))
      )
     ))
@@ -3419,9 +3424,9 @@
 (sf-reg-file "delete-all-images"   "Del Images" "delete image if able" "" )
 
 (require "templates/debug-script" debug-script)	; misc code while debugging
-(set! msg-raw-specs #t)
-(set! msg-make-one #t)
-(set! msg-write-info #t)
+;;(set! msg-raw-specs #t)
+;;(set! msg-make-one #t)
+;;(set! msg-write-info #t)
 ;;(set! msg-type-home #t)
 
 (gimp-message "est-deck loaded")
