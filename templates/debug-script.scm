@@ -40,6 +40,15 @@
 	 )
     (apply card-type-home nreps types name BROWN args))) ; color is evaluated...
 
+(define b3 (vector-ref BACK-DECK 3))
+(define (actb spec)
+  (let* ((nreps (abs (nth 0 spec)))	; (< (nth 0 card-spec) 0) for non-templated 'cards'
+	 (type (nth 1 spec)) (types (type-string type))
+	 (name (nth 2 spec))
+	 (args (list-tail spec 3))	; (nthcdr 3 card-spec) == (rest)
+	 )
+    (apply card-type-back nreps name args))) ; color is evaluated...
+
 
 (define (raws color spec)
   (let* ((title (nth 3 spec))

@@ -966,28 +966,33 @@
 
 ;;; must do GIMP, to get card-width for back props
 (define (card-type-back nreps name color portrait? ty by . extras)
+  (message-string "card-type-back" (syms-to-alist nreps name color portrait? ty by extras))
   ;; make 2 bands of color:
   (let* ((text (util-opt-arg extras))	; optional text to write on back
 	 (filen name)
+	 (nreps 1)
+	 (type "Back")
 	 (image-layer (card-make-base portrait? color ty by))
 	 (image (car image-layer))
-	 (layer (cadr image-layer)))
-    (if text
-	(let* ((size 80) (font CARD-COIN-FONT)
-	       (height (card-text-layer-height text size font))
-	       (cy (- (normalize-y image 'center) (/ height 2))))
-	  (card-make-text-layer image text 'center cy CENTER size font BLACK nil)))
-    (card-set-extras image extras)	; set an image!
-    (message-string1 "card-back" image name color text)
-    (gimp-image-set-filename image (card-filename-from-title name))
-    ;; embed cost=card-width & step=card-height on Card with type="Back"
-    ;; so Javascript can determine Card size before Image is loaded.
-    (let ((nreps 1) (type "Back")
-	  (cost (card-scale (card-width image)))
-	  (step (card-scale (card-height image))))
-      (card-write-info filen (syms-to-alist nreps type name cost step text)))
-    image-layer
-    ))
+	 (layer (cadr image-layer))
+	 ;; embed cost=card-width & step=card-height on Card with type="Back"
+	 ;; so Javascript can determine Card size before Image is loaded.
+	 (cost (card-scale (card-width image)))
+	 (step (card-scale (card-height image))))
+
+      (message-string1 "card-back" image name color text)
+      (raw-specs (nreps type name cost step text color portrait? ty by extras)
+      (if text
+	  (let* ((size 80) (font CARD-COIN-FONT)
+		 (height (card-text-layer-height text size font))
+		 (cy (- (normalize-y image 'center) (/ height 2))))
+	    (card-make-text-layer image text 'center cy CENTER size font BLACK nil)))
+      (card-set-extras image extras)	; set an image!
+      (gimp-image-set-filename image (card-filename-from-title name))
+      (card-write-info filen (syms-to-alist nreps type name cost step text))
+      image-layer)
+      )
+  )
 
 ;;; maybe from GTR? ensure card is filled with color to its original/current size
 (define (card-add-bleed image neww newh width color)
@@ -1154,7 +1159,9 @@
   
   (let* ((type (util-opt-arg args "Direction")) ; or "Blocked"
 	 (filen (string-append type "-" name))
-	 (ext (if (<= (string-length name) 1) "Base" "Dir")))
+	 (ext (if (<= (string-length name) 1) "Base" "Dir"))
+	 (subtype name) (name filen))
+    (raw-specs (nreps type name subtype ext)
     (ifgimp 
      (let* ((block? (not (equal? type "Direction")))
 	    (band (get-dot-band))
@@ -1181,12 +1188,12 @@
        (dir-bar image name block?)
        (card-set-type image type `(lineno .3))
        (card-set-ext image ext)		; "Base" OR "Dir"
-       (let ((name filen) (subtype name))
+       (let ()
 	 (card-write-info filen (syms-to-alist nreps type name subtype ext))
        image-layer))
-     (let* ((name filen) (subtype name))
+     (let* ()
        (and msg-type-dir (message-string1 "card-type-dir" filen nreps type name subtype ext))
-       (card-write-info filen (syms-to-alist nreps type name subtype ext))))
+       (card-write-info filen (syms-to-alist nreps type name subtype ext)))))
     ))
 
 ;; pseudo card for an auction-mat:
@@ -1297,7 +1304,10 @@
 	 ;;(message-string1 "card-type-road" subtype filen)
 	 (band (get-dot-band))
 	 ;;(band 120)
+	 (ext    "Roads")
+	 (props `(,@action ,@oprops))
 	 )
+    (raw-specs (nreps type title cost subtype ext props color ext )
     (ifgimp
      (let* ((image-layer (card-make-base #t color band band))
 	    (image (car image-layer))
@@ -1322,10 +1332,9 @@
 		       (set! n (+ 1 n))))
 		   spec))
        image-layer)
-     (let* ((ext    "Roads")
-	    (props `(,@action ,@oprops)))
+     (let* ()
        (card-write-info filen (syms-to-alist nreps type title cost subtype ext props)))
-     )))
+     ))))
 
 
 (define (card-generic portrait type title color cost text . tweaks)
@@ -1451,7 +1460,7 @@
 	 (name filen) (props `((noStop #t)))
 	 )
     (if msg-type-circle (message-string1 "card-type-circle: PRE-GIMP" filen type title size cost vp))
-    (raw-specs (nreps type title color cost step stop rent vp subtype props text extras)
+    (raw-specs (nreps type name color cost step stop rent vp subtype props text extras)
     (ifgimp
      (let* ((image-layer (card-make-base-image size size radius )) ; size = 250
 	    (image (car image-layer))
