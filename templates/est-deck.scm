@@ -1283,11 +1283,12 @@
   
   (let* ((filen title)			; generic, no tweaks
 	 (align? (> (string-length (symbol->string (car spec))) 1)) ; RR or RL (vs R L S)
-	 (yyyyyy (when align? (set! type  "Alignment")))
-	 (blank? (equal? title "ROAD"))
-	 (xxxxxx (when blank? (set! type "") (set! title ""))) ; align? & symet?
+	 (subtype (if align? nil "Transit")) ; (subtype (if rotc? "rotate" "symetric"))
+	 (ext     (if align? "Base" "Roads"))
+	 (name title)
 	 (symet? (and (eq? (nth 0 spec) (nth 2 spec)) (eq? (nth 1 spec) (nth 3 spec))))
 	 (rotate (and (not symet?) (not align?)))
+
 	 ;;(msg1 (message-string "card-type-road:" 'align?= align? 'symet?= symet? 'rotate= rotate))
 	 (cprops (cardprops args))
 	 (ooStep (util-assq 'onStep cprops))
@@ -1299,20 +1300,20 @@
 		     `((cardFields "roadSpec") (roadSpec (set ,roadDir))
 		       (onStep (dist (add 1)) ,@onStep (moveDir (roadDir roadSpec))))))
 	 ;;(msg (message-string1 "card-type-road:" 'action= action 'roadDir= roadDir))
-	 (subtype (if align? nil "Transit")) ; (subtype (if rotc? "rotate" "symetric"))
 	 (color TRANSIT-COLOR)		     ; very light grey
 	 ;;(message-string1 "card-type-road" subtype filen)
 	 (band (get-dot-band))
 	 ;;(band 120)
-	 (ext    "Roads")
 	 (props `(,@action ,@oprops))
 	 )
-    (raw-specs (nreps type title cost subtype ext props color )
+    (raw-specs (nreps type name cost subtype ext props color )
     (ifgimp
      (let* ((image-layer (card-make-base #t color band band))
 	    (image (car image-layer))
 	    (layer (cadr image-layer))
+	    (blank? (equal? title "ROAD"))
 	    (n -1))
+       (when blank? (set! type "") (set! title "")) ; align? & symet? (card-set-title image "")
        (card-set-title image title `(color ,WHITE))
        (card-set-extras image `((ext "Road")))
        ;;(card-set-extras image `((subtype ,subtype (color ,WHITE)))) ; idenfify as Transit
@@ -1333,7 +1334,7 @@
 		   spec))
        image-layer)
      (let* ()
-       (card-write-info filen (syms-to-alist nreps type title cost subtype ext props)))
+       (card-write-info filen (syms-to-alist nreps type name cost subtype ext props)))
      ))))
 
 
@@ -1368,7 +1369,9 @@
 	 (filen (card-xname title type extras)) ; filen-type
 	 (subtype (util-assq 'subtype extras nil))
 	 (name title) (props (cardprops extras)) (textLow text2))
-    (set! extras `((ext ,ext) (step ,step) ,@extras))
+    (if (not (util-assq 'ext extras #f)) (set! extras `((ext ,ext) ,@extras)))
+    (if (not (util-assq 'step extras #f)) (set! extras `((step ,step) ,@extras)))
+    ;; (set! extras `((ext ,ext) (step ,step) ,@extras))
     (if msg-type-event (message-string1 "card-type-event" type title color cost text textLow extras))
     (raw-specs (nreps type name color cost step subtype ext props text textLow extras)
     (ifgimp
@@ -1394,7 +1397,8 @@
 	 (subtype (util-assq 'subtype extras nil))
 	 (vp (util-assq 'vp extras nil)) ; get the vp value
 	 (name title) (props (cardprops extras)) (textLow text2))
-    (set! extras `((ext ,ext) ,@extras))
+    (if (not (util-assq 'ext extras #f)) (set! extras `((ext ,ext) ,@extras)))
+    ;; (set! extras `((ext ,ext) ,@extras))
     (if (equal? subtype "Transit") (set! color TRANSIT-COLOR))
     (if (equal? subtype "Com-Transit") (set! color COM-TRANSIT-COLOR))
     (raw-specs (nreps type name color cost step stop rent vp subtype ext props text textLow extras)
@@ -1602,7 +1606,7 @@
   (let ((alist `((home "Residential") (res "Residential") (com "Commercial") (fin "Financial") (circle "Token")
 		 (ind "Industrial") (mun "Municipal") (gov "Government") (blank "")
 		 (deferred "Deferred") (event "Event") (future "Future Event") (temp "Temp Policy")
-		 (policy "Policy") (road "Road"))))
+		 (policy "Policy") (road "Road") (align "Alignment"))))
     (util-assq type alist (symbol->string type))))
 
 ;;; return image-layer
@@ -1648,6 +1652,7 @@
               ((policy)     (apply card-type-event nreps types name args))
               ;;
               ((road)       (apply card-type-road nreps types name args)) ; cost spec . args
+              ((align)      (apply card-type-road nreps types name args)) ; cost spec . args
 
               ;; DOTS: "NAME-value" COLOR value
               ((mov)        (apply card-type-move nreps name args))
@@ -3137,8 +3142,8 @@
 
 (define ALIGN-DECK
   #((0 deck "AlignDeck" "align-deck")	; name of object in js/ts
-    (1 road "Rotate-R" () (RR RR RR RR))
-    (1 road "Rotate-L" () (RL RL RL RL))
+    (1 align "Rotate-R" () (RR RR RR RR))
+    (1 align "Rotate-L" () (RL RL RL RL))
     ))
 
 (define MISC-ROADS
