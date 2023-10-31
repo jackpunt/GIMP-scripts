@@ -202,11 +202,6 @@
     (gimp-selection-sharpen image)
     ))
 
-(define (card-select-edge-rect image x y w h)
-  ;;(message-string1 "card-select-edge-rect" image x y w h)
-  (card-select-rr image)
-  (gimp-image-select-rectangle image CHANNEL-OP-INTERSECT x y w h))
-  
 (define (card-crop-layer-to-rr image layer . args)
   (let ((radius (util-opt-arg args templ::corner-radius)))
     (if msg-set-image (message-string "card-crop-layer-to-rr:" image layer radius))
@@ -233,6 +228,12 @@
     ;; WHILE TESTING
     (list image layer)
     ))
+
+(define (card-select-edge-rect image x y w h)
+  ;;(message-string1 "card-select-edge-rect" image x y w h)
+  (card-select-rr image)
+  (gimp-image-select-rectangle image CHANNEL-OP-INTERSECT x y w h))
+  
 
 (define (card-make-image-background image ty by color)
   ;; fill band of color at top and bottom of image base-layer
@@ -972,6 +973,7 @@
 	 (filen name)
 	 (nreps 1)
 	 (type "Back")
+	 (portrait portrait?)
 	 (image-layer (card-make-base portrait? color ty by))
 	 (image (car image-layer))
 	 (layer (cadr image-layer))
@@ -981,7 +983,7 @@
 	 (step (card-scale (card-height image))))
 
       (message-string1 "card-back" image name color text)
-      (raw-specs (nreps type name cost step text color portrait? ty by extras)
+      (raw-specs (nreps type name cost step text color portrait ty by extras)
       (if text
 	  (let* ((size 80) (font CARD-COIN-FONT)
 		 (height (card-text-layer-height text size font))
